@@ -14,6 +14,16 @@ type ApiUserResponse = {
   message?: string;
 };
 
+type NestedApiError = { error?: string; code?: string };
+
+type PreferenceUpdateResponse = {
+  success?: boolean;
+  user?: StoredUser;
+  error?: string | NestedApiError;
+  code?: string;
+  message?: string;
+};
+
 /**
  * Load the current user with the stored JWT.
  * Returns null if missing/expired token (and clears local session).
@@ -53,10 +63,7 @@ export async function updateMatchPreference(
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ interestedIn }),
   });
-  const data = (await res.json().catch(() => ({}))) as ApiUserResponse & {
-    error?: string | { error?: string; code?: string };
-    code?: string;
-  };
+  const data = (await res.json().catch(() => ({}))) as PreferenceUpdateResponse;
 
   if (res.status === 403) {
     const nested =
