@@ -2,12 +2,15 @@ import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { json } from 'express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  app.use(json({ limit: '3mb' }));
 
   const corsOriginRaw =
     config.get<string>('corsOrigin') ?? 'http://localhost:5173';

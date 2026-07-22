@@ -13,6 +13,7 @@ import { HealthController } from './health.controller';
 import { ProfileModule } from './profile/profile.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InvitesModule } from './invites/invites.module';
+import { GenderVerificationModule } from './gender-verification/gender-verification.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { InvitesModule } from './invites/invites.module';
     InvitesModule,
     ProfileModule,
     SubscriptionsModule,
+    GenderVerificationModule,
     RedisModule,
     PresenceModule,
     LivekitModule,

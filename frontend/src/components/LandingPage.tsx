@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { authHeaders, clearToken, setToken } from '../utils/auth';
 import { apiUrl } from '../utils/api';
+import { UnbanRequestModal } from './UnbanRequestModal';
 
 export type RoomMode = 'moderated' | 'unmoderated';
 
@@ -86,6 +87,7 @@ type SignupPanelProps = {
   mode: RoomMode;
   onClose: () => void;
   onRegister?: (user: unknown, token: string) => void;
+  onBanned?: (email: string) => void;
   inviteId?: string | null;
   inviteEmail?: string | null;
   inviteError?: string | null;
@@ -95,6 +97,7 @@ function SignupPanel({
   mode,
   onClose,
   onRegister,
+  onBanned,
   inviteId = null,
   inviteEmail = null,
   inviteError = null,
@@ -174,7 +177,7 @@ function SignupPanel({
         }),
       });
 
-      if (res.status === 401) {
+      if (res.status === 401 || res.status === 403) {
         clearToken();
         localStorage.removeItem('rizz_username');
         localStorage.removeItem('rizz_mode');
@@ -184,6 +187,8 @@ function SignupPanel({
       if (result.success) {
         setToken(result.token);
         onRegister?.(result.user, result.token);
+      } else if (result.code === 'USER_BANNED') {
+        onBanned?.(form.email.trim().toLowerCase());
       } else {
         setStatus(result.error || 'Login failed');
       }
@@ -575,6 +580,7 @@ export default function LandingPage({ mode, onModeChange, onRegister }: LandingP
   const [searchParams, setSearchParams] = useSearchParams();
   const inviteIdFromUrl = searchParams.get('invite_id');
   const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl));
+  const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
   const [inviteId, setInviteId] = useState<string | null>(inviteIdFromUrl);
   const [inviteEmail, setInviteEmail] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -690,12 +696,25 @@ export default function LandingPage({ mode, onModeChange, onRegister }: LandingP
           mode={mode}
           onClose={() => setFlowOpen(false)}
           onRegister={handleRegister}
+          onBanned={(email) => {
+            setFlowOpen(false);
+            setUnbanEmail(email);
+          }}
           inviteId={inviteId}
           inviteEmail={inviteEmail}
           inviteError={inviteError}
         />,
         document.body
       )}
+      {unbanEmail &&
+        createPortal(
+          <UnbanRequestModal
+            email={unbanEmail}
+            mode={mode}
+            onClose={() => setUnbanEmail(null)}
+          />,
+          document.body,
+        )}
     </main>
   );
 }

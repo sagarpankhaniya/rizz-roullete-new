@@ -19,6 +19,7 @@ import { PresenceService } from '../presence/presence.service';
 import { RedisService } from '../redis/redis.service';
 import { UsersService } from '../users/users.service';
 import { PreferenceQueueService } from '../profile/preference-queue.service';
+import { GenderVerificationService } from '../gender-verification/gender-verification.service';
 import {
   ChatMessagePayload,
   PartnerLeftPayload,
@@ -68,6 +69,7 @@ export class MatchingGateway
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
     private readonly preferenceQueue: PreferenceQueueService,
+    private readonly genderVerification: GenderVerificationService,
   ) {}
 
   afterInit(server: Server) {
@@ -129,6 +131,35 @@ export class MatchingGateway
     @MessageBody() body?: StartCallPayload,
   ) {
     try {
+      let socketUser = client.data.user as SocketUser | undefined;
+      if (!socketUser?.userId) {
+        socketUser = (await this.resolveSocketUser(client)) ?? undefined;
+        if (socketUser) {
+          client.data.user = socketUser;
+        }
+      }
+      if (!socketUser?.userId) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Complete camera gender verification before matching.',
+        });
+        return;
+      }
+
+      const dbUser = await this.usersService.findById(socketUser.userId);
+      if (!dbUser || dbUser.isBanned) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: dbUser?.banReason ?? 'You are banned.',
+        });
+        return;
+      }
+
+      if (!(await this.genderVerification.isVerified(socketUser.userId))) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Complete camera gender verification before matching.',
+        });
+        return;
+      }
+
       const prefs = await this.resolveMatchPrefs(client, body);
       if (!prefs) {
         client.emit(SOCKET_EVENTS.ERROR, {

@@ -2,6 +2,7 @@ export const USER_KEY = 'rizz_user';
 
 export type StoredUser = {
   id?: string;
+  email?: string;
   firstName?: string;
   gender?: string | null;
   interestedIn?: string | null;
@@ -26,6 +27,7 @@ export function setStoredUser(user: unknown) {
   const prev = getStoredUser();
   const payload: StoredUser = {
     id: u.id ?? prev?.id,
+    email: u.email ?? prev?.email,
     firstName: u.firstName ?? prev?.firstName,
     gender: u.gender ?? prev?.gender ?? null,
     interestedIn: u.interestedIn ?? prev?.interestedIn ?? null,

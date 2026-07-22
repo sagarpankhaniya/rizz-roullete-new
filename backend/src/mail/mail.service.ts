@@ -119,4 +119,91 @@ export class MailService {
       `Creator invite email sent to ${to} (id=${body.messageId ?? 'ok'})`,
     );
   }
+
+  async sendUnbanRequest(input: {
+    adminEmail: string;
+    userEmail: string;
+    userId: string;
+    firstName: string;
+    banReason: string | null;
+    bannedAt: Date | null;
+  }): Promise<void> {
+    const bannedAtLabel = input.bannedAt
+      ? new Date(input.bannedAt).toLocaleString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+        })
+      : 'Unknown';
+    const reason = input.banReason?.trim() || 'Not specified';
+    const subject = `Unban request — ${input.firstName} (${input.userEmail})`;
+    const htmlContent = `
+      <div style="margin:0;padding:32px 16px;background:#120812;background-image:radial-gradient(circle at top, rgba(255,45,122,0.24), transparent 34%), radial-gradient(circle at bottom right, rgba(255,140,190,0.18), transparent 28%);font-family:Outfit,Arial,sans-serif;line-height:1.5;color:#fff0f7;">
+        <div style="max-width:620px;margin:0 auto;">
+          <div style="text-align:center;margin-bottom:18px;">
+            <div style="display:inline-block;padding:7px 14px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#ffd5e8;">
+              Unban Request
+            </div>
+          </div>
+          <div style="border-radius:28px;padding:36px 30px;background:rgba(22,12,24,0.82);border:1px solid rgba(255,255,255,0.1);box-shadow:0 18px 54px rgba(0,0,0,0.35);">
+            <h1 style="margin:0 0 14px;font-family:Fraunces,Georgia,serif;font-size:34px;line-height:1.05;color:#fff0f7;">
+              User requested ban removal
+            </h1>
+            <p style="margin:0 0 18px;font-size:16px;color:rgba(255,240,247,0.88);">
+              A banned account asked an admin to review and remove their ban.
+            </p>
+            <div style="margin:22px 0 8px;padding:18px;border-radius:20px;background:linear-gradient(135deg, rgba(255,45,122,0.14), rgba(255,255,255,0.05));border:1px solid rgba(255,140,190,0.28);">
+              <p style="margin:0 0 10px;font-size:14px;"><strong>Name:</strong> ${input.firstName}</p>
+              <p style="margin:0 0 10px;font-size:14px;"><strong>Email:</strong> ${input.userEmail}</p>
+              <p style="margin:0 0 10px;font-size:14px;"><strong>User ID:</strong> ${input.userId}</p>
+              <p style="margin:0 0 10px;font-size:14px;"><strong>Banned at:</strong> ${bannedAtLabel}</p>
+              <p style="margin:0;font-size:14px;"><strong>Ban reason:</strong> ${reason}</p>
+            </div>
+            <p style="margin:18px 0 0;font-size:13px;color:rgba(255,240,247,0.7);">
+              Please review this account in the admin tools and unban if appropriate.
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (!this.apiKey) {
+      this.logger.log(
+        `[dev] Unban request for ${input.userEmail} → ${input.adminEmail}`,
+      );
+      return;
+    }
+
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': this.apiKey,
+      },
+      body: JSON.stringify({
+        sender: this.sender,
+        to: [{ email: input.adminEmail }],
+        replyTo: { email: input.userEmail, name: input.firstName },
+        subject,
+        htmlContent,
+      }),
+    });
+
+    const body = (await res.json().catch(() => ({}))) as {
+      messageId?: string;
+      message?: string;
+    };
+
+    if (!res.ok) {
+      const message =
+        body.message || `Brevo error ${res.status}: failed to send email`;
+      this.logger.error(
+        `Failed to send unban request for ${input.userEmail}: ${message}`,
+      );
+      throw new Error(message);
+    }
+
+    this.logger.log(
+      `Unban request email sent for ${input.userEmail} → ${input.adminEmail} (id=${body.messageId ?? 'ok'})`,
+    );
+  }
 }

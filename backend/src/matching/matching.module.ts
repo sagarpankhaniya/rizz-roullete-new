@@ -5,6 +5,7 @@ import { PresenceModule } from '../presence/presence.module';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { ProfileModule } from '../profile/profile.module';
+import { GenderVerificationModule } from '../gender-verification/gender-verification.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ProfileModule } from '../profile/profile.module';
     AuthModule,
     UsersModule,
     ProfileModule,
+    GenderVerificationModule,
   ],
   providers: [MatchingGateway],
 })

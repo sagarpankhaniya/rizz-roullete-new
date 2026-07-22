@@ -1351,6 +1351,35 @@ h1 {
   animation: fadeSlideUp 400ms ease-out;
 }
 
+.partner-loading-layer.has-actions {
+  pointer-events: auto;
+}
+
+.partner-loading-layer.has-actions .partner-loading-label {
+  bottom: 118px;
+}
+
+.partner-verify-actions {
+  position: absolute;
+  z-index: 4;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  width: min(92%, 360px);
+  pointer-events: auto;
+}
+
+.partner-verify-actions .hot-button,
+.partner-verify-actions .ghost-button {
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
 .partner-video.video-ready .partner-loading-layer {
   /* visibility driven by .is-visible; keep rule for backwards compat */
   pointer-events: none;

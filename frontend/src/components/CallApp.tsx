@@ -22,9 +22,22 @@ import { getSocket } from '../services/socket';
 import { COUNTRIES } from '../data/countries';
 import type { RoomMode } from './LandingPage';
 import { SubscriptionModal } from './SubscriptionModal';
-import { getStoredUser, isUserSubscribed, isUserVip, setStoredUser } from '../utils/user';
+import { UnbanRequestModal } from './UnbanRequestModal';
+import {
+  clearStoredUser,
+  getStoredUser,
+  isUserSubscribed,
+  isUserVip,
+  setStoredUser,
+  type StoredUser,
+} from '../utils/user';
 import { updateMatchPreference } from '../services/profile';
-import type { StoredUser } from '../utils/user';
+import {
+  verifyVideoFrame,
+  type GenderVerificationResponse,
+} from '../services/genderVerification';
+import { clearToken } from '../utils/auth';
+import { createPortal } from 'react-dom';
 import {
   SOCKET_EVENTS,
   type ChatMessagePayload,
@@ -58,6 +71,14 @@ interface CallAppProps {
   onLogout?: () => void;
 }
 
+type GenderCheckStatus =
+  | 'idle'
+  | 'checking'
+  | 'verified'
+  | 'mismatch'
+  | 'banned'
+  | 'retry';
+
 export function CallApp({
   mode = 'moderated',
   username = 'Guest',
@@ -77,6 +98,7 @@ export function CallApp({
   const previewStreamRef = useRef<MediaStream | null>(null);
   const filterPillsRef = useRef<HTMLDivElement | null>(null);
   const autoStartedRef = useRef(false);
+  const verificationRunningRef = useRef(false);
   const rematchingRef = useRef(false);
   const searchStartedAtRef = useRef<number | null>(null);
 
@@ -130,6 +152,14 @@ export function CallApp({
   const [customTip, setCustomTip] = useState('');
   const [tipStatus, setTipStatus] = useState('');
   const [tipSending, setTipSending] = useState(false);
+  const [genderCheck, setGenderCheck] = useState<{
+    status: GenderCheckStatus;
+    message: string;
+  }>({
+    status: 'idle',
+    message: 'Preparing your camera for profile verification…',
+  });
+  const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
   const [tipToast, setTipToast] = useState<{
     amount: string;
     fromIdentity: string;
@@ -198,22 +228,206 @@ export function CallApp({
     }
   }, [stopPreview]);
 
+  const verifyProfileAndStart = useCallback(async () => {
+    if (verificationRunningRef.current) return;
+    verificationRunningRef.current = true;
+    setGenderCheck({
+      status: 'checking',
+      message: 'Checking your profile against the live camera…',
+    });
+
+    const markBanned = () => {
+      const email = getStoredUser()?.email?.trim() || '';
+      clearToken();
+      clearStoredUser();
+      setUnbanEmail(email || null);
+      setGenderCheck({
+        status: 'banned',
+        message: '',
+      });
+    };
+
+    try {
+      await ensurePreview();
+      const video = previewVideoRef.current;
+      if (!video) {
+        throw new Error('Camera preview is unavailable.');
+      }
+
+      const conclusive: GenderVerificationResponse[] = [];
+      let sawMultipleFaces = false;
+      let verificationPassed = false;
+      let accountBanned = false;
+      for (let index = 0; index < 3; index += 1) {
+        const result = await verifyVideoFrame(video);
+        sawMultipleFaces ||= Boolean(result.multipleFaces);
+        verificationPassed = result.verificationPassed;
+        accountBanned = result.accountBanned;
+        if (accountBanned) break;
+        if (
+          result.matchesProfile !== null &&
+          result.confidenceAccepted
+        ) {
+          conclusive.push(result);
+        }
+        if (index < 2) {
+          await new Promise((resolve) => window.setTimeout(resolve, 400));
+        }
+      }
+
+      if (accountBanned) {
+        markBanned();
+        return;
+      }
+
+      const matchingFrames = conclusive.filter(
+        (result) => result.matchesProfile,
+      ).length;
+      const mismatchingFrames = conclusive.filter(
+        (result) => result.matchesProfile === false,
+      ).length;
+
+      if (verificationPassed && matchingFrames >= 2) {
+        setGenderCheck({
+          status: 'verified',
+          message: 'Profile verified.',
+        });
+        startCall();
+        return;
+      }
+
+      if (mismatchingFrames >= 2) {
+        setGenderCheck({
+          status: 'mismatch',
+          message: 'The camera result does not match your profile gender.',
+        });
+        return;
+      }
+
+      setGenderCheck({
+        status: 'retry',
+        message: sawMultipleFaces
+          ? 'Only one person may be visible during verification.'
+          : 'Keep one face clearly visible in good lighting, then retry.',
+      });
+    } catch (error) {
+      const code =
+        error instanceof Error
+          ? (error as Error & { code?: string }).code
+          : undefined;
+      if (code === 'USER_BANNED') {
+        markBanned();
+        return;
+      }
+      setGenderCheck({
+        status: 'retry',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Gender verification failed. Please retry.',
+      });
+    } finally {
+      verificationRunningRef.current = false;
+    }
+  }, [ensurePreview, startCall]);
+
   const [partnerFeedReady, setPartnerFeedReady] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
 
   const isUnmod = mode === 'unmoderated';
   const isConnected =
     phase === 'in_call' || connectionState === ConnectionState.Connected;
+  const isVerifying =
+    genderCheck.status === 'idle' || genderCheck.status === 'checking';
+  const verifyFailed =
+    genderCheck.status === 'mismatch' || genderCheck.status === 'retry';
   const isSearching =
     isSkipping ||
+    isVerifying ||
+    verifyFailed ||
     phase === 'waiting' ||
     phase === 'connecting' ||
     phase === 'idle' ||
     phase === 'partner_left';
   const isConnecting = !isSkipping && phase === 'matched' && !partnerFeedReady;
   // Keep heart loader until the new partner's first video frame is painted
-  const showPartnerLoading = !partnerFeedReady;
-  const videoReady = partnerFeedReady;
+  const showPartnerLoading = !partnerFeedReady || isVerifying || verifyFailed;
+  const videoReady = partnerFeedReady && genderCheck.status === 'verified';
+  const partnerLoadingLabel = isVerifying
+    ? 'Verifying…'
+    : verifyFailed
+      ? genderCheck.status === 'mismatch'
+        ? 'Profile mismatch'
+        : 'Verification needed'
+      : isConnecting
+        ? 'Connecting…'
+        : 'Searching…';
+
+  // Re-check the live camera every 10s during an active call so a verified
+  // profile cannot be swapped for another person after matchmaking starts.
+  useEffect(() => {
+    if (genderCheck.status !== 'verified') return;
+    if (!isConnected) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const markBanned = async () => {
+      const email = getStoredUser()?.email?.trim() || '';
+      clearToken();
+      clearStoredUser();
+      setUnbanEmail(email || null);
+      setGenderCheck({
+        status: 'banned',
+        message: '',
+      });
+      clearRemoteMedia();
+      await disconnect();
+      await leaveCall();
+    };
+
+    const tick = async () => {
+      if (cancelled || inFlight || !camEnabledRef.current) return;
+      const video = localVideoRef.current ?? previewVideoRef.current;
+      if (!video || video.readyState < 2 || video.videoWidth <= 0) return;
+
+      inFlight = true;
+      try {
+        const result = await verifyVideoFrame(video, { waitForReady: false });
+        if (cancelled) return;
+        if (result.accountBanned) {
+          await markBanned();
+        }
+      } catch (error) {
+        if (cancelled) return;
+        const code =
+          error instanceof Error
+            ? (error as Error & { code?: string }).code
+            : undefined;
+        if (code === 'USER_BANNED') {
+          await markBanned();
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void tick();
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    genderCheck.status,
+    isConnected,
+    clearRemoteMedia,
+    disconnect,
+    leaveCall,
+    localVideoRef,
+  ]);
 
   const hasActiveFilters =
     !!countryFilter || genderPref !== 'everyone' || tags.length > 0;
@@ -536,17 +750,19 @@ export function CallApp({
     }
   };
 
-  // Auto-start matching as soon as this page loads
+  // Verify the authenticated user's profile against live camera frames before
+  // allowing the socket to enter matchmaking.
   useEffect(() => {
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
     searchStartedAtRef.current = Date.now();
-    startCall();
-  }, [startCall]);
+    void verifyProfileAndStart();
+  }, [verifyProfileAndStart]);
 
   // After 1 minute of searching with no match → show Retry / Log Out modal
   useEffect(() => {
     if (showNoMatch) return;
+    if (genderCheck.status !== 'verified') return;
 
     if (phase === 'matched' || phase === 'in_call') {
       searchStartedAtRef.current = null;
@@ -575,7 +791,7 @@ export function CallApp({
     }, remaining);
 
     return () => window.clearTimeout(id);
-  }, [phase, showNoMatch, leaveCall]);
+  }, [phase, showNoMatch, leaveCall, genderCheck.status]);
 
   // When partner leaves/disconnects, tear down LiveKit and rejoin the queue
   useEffect(() => {
@@ -609,6 +825,7 @@ export function CallApp({
   // Keep preview alive until LiveKit actually takes the camera (onBeforeEnableCamera).
   // Do NOT tie this to `match` — that caused a black PiP while finding a partner.
   useEffect(() => {
+    if (genderCheck.status !== 'verified') return;
     if (!camEnabled) {
       stopPreview();
       return;
@@ -618,7 +835,14 @@ export function CallApp({
       return;
     }
     void ensurePreview();
-  }, [camEnabled, isConnected, isSkipping, ensurePreview, stopPreview]);
+  }, [
+    camEnabled,
+    genderCheck.status,
+    isConnected,
+    isSkipping,
+    ensurePreview,
+    stopPreview,
+  ]);
 
   // Release preview tracks only on unmount
   useEffect(() => () => stopPreview(), [stopPreview]);
@@ -708,22 +932,34 @@ export function CallApp({
     startCall();
   };
 
-  const statusLine = showPartnerLoading
-    ? `Finding ${isUnmod ? 'premium' : 'cute'} match for ${username}…`
-    : isConnected
-      ? '✨ Connected!'
-      : `Welcome, ${username}`;
+  const statusLine = isVerifying
+    ? `Verifying profile for ${username}…`
+    : verifyFailed
+      ? genderCheck.message
+      : showPartnerLoading
+        ? `Finding ${isUnmod ? 'premium' : 'cute'} match for ${username}…`
+        : isConnected
+          ? '✨ Connected!'
+          : `Welcome, ${username}`;
 
   const partnerTitle =
     partnerFeedReady && remoteIdentity
       ? remoteIdentity
-      : 'Finding your spark…';
+      : isVerifying
+        ? 'Verifying your profile…'
+        : verifyFailed
+          ? 'Verification paused'
+          : 'Finding your spark…';
 
   const partnerSubtitle = partnerFeedReady
     ? 'Live now'
-    : isConnecting
-      ? 'Connecting video…'
-      : 'Spinning the roulette';
+    : isVerifying
+      ? 'Checking camera…'
+      : verifyFailed
+        ? 'Retry to continue'
+        : isConnecting
+          ? 'Connecting video…'
+          : 'Spinning the roulette';
 
   const filteredCountries = COUNTRIES.filter((c) =>
     c.name.toLowerCase().includes(countrySearch.toLowerCase()),
@@ -762,6 +998,7 @@ export function CallApp({
           className="hot-button mobile-skip-btn"
           type="button"
           onClick={() => void handleLeave()}
+          disabled={genderCheck.status !== 'verified'}
           aria-label="Skip to next match"
         >
           <Play size={16} /> Skip / Next
@@ -779,8 +1016,14 @@ export function CallApp({
         ) : (
           <button className="start-chat desktop-searching-btn" type="button" disabled>
             <Play size={16} />
-            <span>Searching</span>
-            <SearchingDots />
+            <span>
+              {isVerifying
+                ? 'Verifying'
+                : verifyFailed
+                  ? 'Paused'
+                  : 'Searching'}
+            </span>
+            {!verifyFailed && <SearchingDots />}
           </button>
         )}
         <p>{statusLine}</p>
@@ -808,7 +1051,7 @@ export function CallApp({
           <audio ref={remoteAudioRef} autoPlay />
           {/* Always mounted so skip never flashes black / empty without the heart */}
           <div
-            className={`partner-loading-layer${showPartnerLoading ? ' is-visible' : ''}`}
+            className={`partner-loading-layer${showPartnerLoading ? ' is-visible' : ''}${verifyFailed ? ' has-actions' : ''}`}
             aria-hidden={!showPartnerLoading}
           >
             <div className="partner-loading-shimmer" />
@@ -817,8 +1060,26 @@ export function CallApp({
             </div>
             {showPartnerLoading && (
               <span className="partner-loading-label">
-                {isConnecting ? 'Connecting…' : 'Searching…'}
+                {partnerLoadingLabel}
               </span>
+            )}
+            {verifyFailed && (
+              <div className="partner-verify-actions">
+                <button
+                  type="button"
+                  className="hot-button"
+                  onClick={() => void verifyProfileAndStart()}
+                >
+                  Retry Verification
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => void handleClose()}
+                >
+                  Back
+                </button>
+              </div>
             )}
           </div>
           <span className="video-label">Partner</span>
@@ -1390,6 +1651,33 @@ export function CallApp({
           </div>
         </div>
       )}
+      {genderCheck.status === 'banned' &&
+        (unbanEmail
+          ? createPortal(
+              <UnbanRequestModal
+                email={unbanEmail}
+                mode={mode}
+                onClose={() => void handleLogout()}
+              />,
+              document.body,
+            )
+          : (
+            <div className="live-room-overlay" role="dialog" aria-modal="true">
+              <div className="live-room-overlay-card">
+                <h3>Account Restricted</h3>
+                <p>Please log in again to request an unban.</p>
+                <div className="flow-actions">
+                  <button
+                    type="button"
+                    className="hot-button"
+                    onClick={() => void handleLogout()}
+                  >
+                    Log Out
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
       {showNoMatch && (
         <div
           className="live-room-overlay"

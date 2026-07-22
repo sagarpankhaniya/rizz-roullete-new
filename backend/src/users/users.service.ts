@@ -88,5 +88,24 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
+
+  async banUser(
+    userId: string,
+    reason: string,
+  ): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          isBanned: true,
+          banReason: reason,
+          bannedAt: new Date(),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
 }
 

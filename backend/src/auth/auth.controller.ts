@@ -9,6 +9,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UnbanRequestDto } from './dto/unban-request.dto';
 import { UsersService } from '../users/users.service';
 import {
   normalizeGender,
@@ -62,6 +63,11 @@ export class AuthController {
     return { success: true, ...result };
   }
 
+  @Post('unban-request')
+  async requestUnban(@Body() body: UnbanRequestDto) {
+    return this.authService.requestUnban(body.email);
+  }
+
   /** Resume session from stored JWT — used on page reload. */
   @Get('profile')
   @UseGuards(JwtAuthGuard)
@@ -70,4 +76,3 @@ export class AuthController {
     return { success: true, ...result };
   }
 }
-

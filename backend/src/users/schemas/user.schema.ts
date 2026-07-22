@@ -49,6 +49,16 @@ export class User {
 
   @Prop({ type: String, default: null })
   creatorInviteId: string | null;
+
+  /** Set after repeated confident gender-verification mismatches. */
+  @Prop({ type: Boolean, default: false })
+  isBanned: boolean;
+
+  @Prop({ type: String, default: null })
+  banReason: string | null;
+
+  @Prop({ type: Date, default: null })
+  bannedAt: Date | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

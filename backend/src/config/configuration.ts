@@ -17,7 +17,17 @@ export default () => ({
 
   mail: {
     brevoApiKey: process.env.BREVO_API_KEY,
-    from: process.env.MAIL_FROM ?? 'Rizz <sagarjpdev@gmail.com>',
+    from: process.env.MAIL_FROM ?? 'Rizz <shahvishwash@gmail.com>',
+    adminEmail: (
+      process.env.ADMIN_UNBAN_EMAIL ?? 'u8jknkhkh@yopmail.com'
+    ).trim(),
+  },
+
+  aiService: {
+    url: process.env.AI_SERVICE_URL ?? 'http://127.0.0.1:8000',
+    genderConfidenceThreshold: parseFloat(
+      process.env.AI_GENDER_CONFIDENCE_THRESHOLD ?? '0.60',
+    ),
   },
 
   redis: {
