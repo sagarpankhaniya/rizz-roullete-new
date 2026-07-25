@@ -5,13 +5,22 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
-import { Model } from 'mongoose';
+import { FilterQuery, Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import {
   CreatorInvite,
   CreatorInviteDocument,
+  CreatorInviteStatus,
+  normalizeCreatorStatus,
 } from './schemas/creator-invite.schema';
 import { MailService } from '../mail/mail.service';
+
+export interface ListCreatorInvitesQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: CreatorInviteStatus;
+}
 
 @Injectable()
 export class InvitesService {
@@ -22,21 +31,42 @@ export class InvitesService {
     private readonly config: ConfigService,
   ) {}
 
-  private inviteUrl(inviteId: string): string {
+  inviteUrl(inviteId: string): string {
     const base = (
       this.config.get<string>('frontendUrl') ?? 'http://localhost:5173'
     ).replace(/\/$/, '');
     return `${base}/?invite_id=${encodeURIComponent(inviteId)}`;
   }
 
+  private statusFilter(
+    status?: CreatorInviteStatus,
+  ): FilterQuery<CreatorInviteDocument>['status'] | undefined {
+    if (status === 'invited') return { $in: ['invited', 'pending'] };
+    if (status === 'accepted') return { $in: ['accepted', 'used'] };
+    return undefined;
+  }
+
   async createCreatorInvite(email: string) {
     const normalizedEmail = email.toLowerCase().trim();
-    const inviteId = uuidv4();
 
+    const existingPending = await this.inviteModel
+      .findOne({
+        email: normalizedEmail,
+        status: { $in: ['invited', 'pending'] },
+      })
+      .exec();
+    if (existingPending) {
+      throw new BadRequestException({
+        error: 'An invite is already pending for this email',
+        code: 'INVITE_ALREADY_PENDING',
+      });
+    }
+
+    const inviteId = uuidv4();
     const invite = await this.inviteModel.create({
       inviteId,
       email: normalizedEmail,
-      status: 'pending',
+      status: 'invited',
     });
 
     const url = this.inviteUrl(invite.inviteId);
@@ -48,16 +78,14 @@ export class InvitesService {
     } catch (err) {
       emailSent = false;
       emailError =
-        err instanceof Error
-          ? err.message
-          : 'Failed to send invite email';
+        err instanceof Error ? err.message : 'Failed to send invite email';
     }
 
     return {
       inviteId: invite.inviteId,
       email: invite.email,
       inviteUrl: url,
-      status: invite.status,
+      status: normalizeCreatorStatus(invite.status),
       emailSent,
       emailError,
     };
@@ -68,7 +96,7 @@ export class InvitesService {
     if (!invite) {
       throw new NotFoundException({ error: 'Invite not found' });
     }
-    if (invite.status !== 'pending') {
+    if (normalizeCreatorStatus(invite.status) !== 'invited') {
       throw new BadRequestException({
         error: 'This invite has already been used',
       });
@@ -76,13 +104,50 @@ export class InvitesService {
     return {
       inviteId: invite.inviteId,
       email: invite.email,
-      status: invite.status,
+      status: 'invited' as const,
+    };
+  }
+
+  async findByInviteId(inviteId: string): Promise<CreatorInviteDocument | null> {
+    return this.inviteModel.findOne({ inviteId }).exec();
+  }
+
+  async listCreatorInvites(query: ListCreatorInvitesQuery) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10));
+    const filter: FilterQuery<CreatorInviteDocument> = {};
+
+    const status = this.statusFilter(query.status);
+    if (status) filter.status = status;
+
+    const search = query.search?.trim();
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.email = new RegExp(escaped, 'i');
+    }
+
+    const [items, total] = await Promise.all([
+      this.inviteModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.inviteModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit) || 1),
     };
   }
 
   /**
    * Atomically consume a pending invite for the given email.
-   * Returns the invite if claimed; throws if missing, used, or email mismatch.
+   * Marks status as accepted.
    */
   async consumeInvite(
     inviteId: string,
@@ -94,11 +159,11 @@ export class InvitesService {
       .findOneAndUpdate(
         {
           inviteId,
-          status: 'pending',
+          status: { $in: ['invited', 'pending'] },
           email: normalizedEmail,
         },
         {
-          status: 'used',
+          status: 'accepted',
           usedByUserId: userId,
           usedAt: new Date(),
         },
@@ -111,7 +176,7 @@ export class InvitesService {
       if (!existing) {
         throw new BadRequestException({ error: 'Invalid invite' });
       }
-      if (existing.status !== 'pending') {
+      if (normalizeCreatorStatus(existing.status) !== 'invited') {
         throw new BadRequestException({
           error: 'This invite has already been used',
         });

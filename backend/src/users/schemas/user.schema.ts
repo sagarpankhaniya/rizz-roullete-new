@@ -1,6 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
+export type UserRole = 'user' | 'admin';
+
 export type UserDocument = HydratedDocument<User>;
 
 @Schema({ timestamps: true, collection: 'users' })
@@ -13,6 +15,9 @@ export class User {
 
   @Prop({ required: true })
   password: string;
+
+  @Prop({ type: String, enum: ['user', 'admin'], default: 'user', index: true })
+  role: UserRole;
 
   @Prop({ type: String, enum: ['male', 'female'], default: null })
   gender: string | null;
@@ -50,8 +55,16 @@ export class User {
   @Prop({ type: String, default: null })
   creatorInviteId: string | null;
 
+  /** Captured at registration time. */
+  @Prop({ type: String, default: null })
+  registrationIp: string | null;
+
+  /** Captured at registration time. */
+  @Prop({ type: String, default: null })
+  userAgent: string | null;
+
   /** Set after repeated confident gender-verification mismatches. */
-  @Prop({ type: Boolean, default: false })
+  @Prop({ type: Boolean, default: false, index: true })
   isBanned: boolean;
 
   @Prop({ type: String, default: null })

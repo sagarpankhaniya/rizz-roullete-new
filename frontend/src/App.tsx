@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import LandingPage, { type RoomMode } from './components/LandingPage';
-import InviteCreatorPage from './components/InviteCreatorPage';
 import { CallApp } from './components/CallApp';
 import { clearToken, getToken, setToken } from './utils/auth';
 import { clearStoredUser, setStoredUser } from './utils/user';
@@ -142,7 +141,6 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/invite-creator" element={<InviteCreatorPage />} />
         <Route path="/" element={<AppShell />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

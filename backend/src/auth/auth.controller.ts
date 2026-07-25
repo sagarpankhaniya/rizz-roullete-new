@@ -4,8 +4,10 @@ import {
   Controller,
   Get,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -20,6 +22,10 @@ import {
   CurrentUser,
   type JwtPayload,
 } from '../common/decorators/current-user.decorator';
+import {
+  getClientIp,
+  getUserAgent,
+} from '../common/utils/request-meta.util';
 
 @Controller('api')
 export class AuthController {
@@ -29,7 +35,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
-  async register(@Body() body: RegisterDto) {
+  async register(@Body() body: RegisterDto, @Req() req: Request) {
     const gender = normalizeGender(body.gender);
     const interestedIn = normalizeInterestedIn(body.interestedIn);
 
@@ -52,6 +58,8 @@ export class AuthController {
       gender,
       interestedIn,
       inviteId: body.inviteId,
+      registrationIp: getClientIp(req),
+      userAgent: getUserAgent(req),
     });
 
     return { success: true, ...result };

@@ -9,6 +9,7 @@ import { MatchingModule } from './matching/matching.module';
 import { MatchmakingModule } from './matchmaking/matchmaking.module';
 import { CallSessionModule } from './call-session/call-session.module';
 import { AuthModule } from './auth/auth.module';
+import { AdminModule } from './admin/admin.module';
 import { HealthController } from './health.controller';
 import { ProfileModule } from './profile/profile.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
@@ -33,6 +34,7 @@ import { GenderVerificationModule } from './gender-verification/gender-verificat
       },
     }),
     AuthModule,
+    AdminModule,
     InvitesModule,
     ProfileModule,
     SubscriptionsModule,

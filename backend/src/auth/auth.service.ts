@@ -50,6 +50,8 @@ export class AuthService {
     gender: string;
     interestedIn: string;
     inviteId?: string;
+    registrationIp?: string | null;
+    userAgent?: string | null;
   }) {
     if (data.inviteId) {
       const invite = await this.invitesService.getPendingInvite(data.inviteId);
@@ -68,6 +70,8 @@ export class AuthService {
       interestedIn: data.interestedIn,
       isVip: Boolean(data.inviteId),
       creatorInviteId: data.inviteId ?? null,
+      registrationIp: data.registrationIp ?? null,
+      userAgent: data.userAgent ?? null,
     });
 
     if (data.inviteId) {

@@ -11,6 +11,8 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.use(json({ limit: '3mb' }));
+  // Honor X-Forwarded-For behind ngrok / reverse proxies (registration IP).
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   const corsOriginRaw =
     config.get<string>('corsOrigin') ?? 'http://localhost:5173';

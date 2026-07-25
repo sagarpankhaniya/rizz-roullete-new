@@ -58,22 +58,11 @@ export class MailService {
                 One-time invite, VIP badge on video calls, and instant access to the same signup flow used on the landing page.
               </p>
             </div>
-            <p style="margin:0 0 22px;">
+            <p style="margin:0;">
               <a href="${inviteUrl}" style="display:inline-block;padding:14px 22px;background:linear-gradient(135deg,#ff2d7a,#ff6aa8);color:#fff;text-decoration:none;border-radius:999px;font-weight:800;font-size:15px;letter-spacing:0.01em;box-shadow:0 10px 24px rgba(255,45,122,0.35);">
                 Create your account
               </a>
             </p>
-            <p style="margin:0 0 12px;font-size:13px;color:#ffd1e5;">
-              This invite can only be used once.
-            </p>
-            <div style="padding:14px 16px;border-radius:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);">
-              <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#ff9bc4;">
-                Direct link
-              </p>
-              <p style="margin:0;font-size:12px;word-break:break-all;color:rgba(255,240,247,0.7);">
-                ${inviteUrl}
-              </p>
-            </div>
           </div>
           <p style="margin:16px auto 0;max-width:560px;text-align:center;font-size:12px;color:rgba(255,240,247,0.58);">
             Rizz Roulette creator access
@@ -204,6 +193,76 @@ export class MailService {
 
     this.logger.log(
       `Unban request email sent for ${input.userEmail} → ${input.adminEmail} (id=${body.messageId ?? 'ok'})`,
+    );
+  }
+
+  async sendAdminPasswordReset(input: {
+    to: string;
+    firstName: string;
+    resetUrl: string;
+  }): Promise<void> {
+    const subject = 'Reset your Rizz admin password';
+    const htmlContent = `
+      <div style="margin:0;padding:32px 16px;background:#120812;font-family:Outfit,Arial,sans-serif;line-height:1.5;color:#fff0f7;">
+        <div style="max-width:620px;margin:0 auto;">
+          <div style="border-radius:28px;padding:36px 30px;background:rgba(22,12,24,0.82);border:1px solid rgba(255,255,255,0.1);">
+            <h1 style="margin:0 0 14px;font-family:Fraunces,Georgia,serif;font-size:34px;line-height:1.05;color:#fff0f7;">
+              Reset admin password
+            </h1>
+            <p style="margin:0 0 18px;font-size:16px;color:rgba(255,240,247,0.88);">
+              Hi ${input.firstName}, click the button below to choose a new password. This link expires in 30 minutes.
+            </p>
+            <p style="margin:0 0 22px;">
+              <a href="${input.resetUrl}" style="display:inline-block;padding:14px 22px;background:linear-gradient(135deg,#ff2d7a,#ff6aa8);color:#fff;text-decoration:none;border-radius:999px;font-weight:800;font-size:15px;">
+                Reset password
+              </a>
+            </p>
+            <div style="padding:14px 16px;border-radius:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);">
+              <p style="margin:0;font-size:12px;word-break:break-all;color:rgba(255,240,247,0.7);">
+                ${input.resetUrl}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (!this.apiKey) {
+      this.logger.log(`[dev] Admin password reset for ${input.to}: ${input.resetUrl}`);
+      return;
+    }
+
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-key': this.apiKey,
+      },
+      body: JSON.stringify({
+        sender: this.sender,
+        to: [{ email: input.to }],
+        subject,
+        htmlContent,
+      }),
+    });
+
+    const body = (await res.json().catch(() => ({}))) as {
+      messageId?: string;
+      message?: string;
+    };
+
+    if (!res.ok) {
+      const message =
+        body.message || `Brevo error ${res.status}: failed to send email`;
+      this.logger.error(
+        `Failed to send admin password reset to ${input.to}: ${message}`,
+      );
+      throw new Error(message);
+    }
+
+    this.logger.log(
+      `Admin password reset email sent to ${input.to} (id=${body.messageId ?? 'ok'})`,
     );
   }
 }

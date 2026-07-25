@@ -4,8 +4,12 @@
  */
 export default () => ({
   port: parseInt(process.env.PORT ?? '3001', 10),
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+  corsOrigin:
+    process.env.CORS_ORIGIN ??
+    'http://localhost:5173,http://localhost:5174',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:5173',
+  adminFrontendUrl:
+    process.env.ADMIN_FRONTEND_URL ?? 'http://localhost:5174',
 
   jwt: {
     secret: process.env.JWT_SECRET,

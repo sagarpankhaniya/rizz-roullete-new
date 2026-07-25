@@ -3,23 +3,24 @@ import { HydratedDocument } from 'mongoose';
 
 export type CreatorInviteDocument = HydratedDocument<CreatorInvite>;
 
-export type CreatorInviteStatus = 'pending' | 'used';
+/** Public/admin-facing status. Legacy DB values: pending → invited, used → accepted. */
+export type CreatorInviteStatus = 'invited' | 'accepted';
 
 @Schema({ timestamps: true, collection: 'creator_invites' })
 export class CreatorInvite {
   @Prop({ required: true, unique: true, index: true })
   inviteId: string;
 
-  @Prop({ required: true, lowercase: true, trim: true })
+  @Prop({ required: true, lowercase: true, trim: true, index: true })
   email: string;
 
   @Prop({
     type: String,
-    enum: ['pending', 'used'],
-    default: 'pending',
+    enum: ['invited', 'accepted', 'pending', 'used'],
+    default: 'invited',
     index: true,
   })
-  status: CreatorInviteStatus;
+  status: CreatorInviteStatus | 'pending' | 'used';
 
   @Prop({ type: String, default: null })
   usedByUserId: string | null;
@@ -29,3 +30,10 @@ export class CreatorInvite {
 }
 
 export const CreatorInviteSchema = SchemaFactory.createForClass(CreatorInvite);
+
+export function normalizeCreatorStatus(
+  status: string | null | undefined,
+): CreatorInviteStatus {
+  if (status === 'accepted' || status === 'used') return 'accepted';
+  return 'invited';
+}

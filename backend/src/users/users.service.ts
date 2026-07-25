@@ -1,8 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import { User, UserDocument } from './schemas/user.schema';
+import { FilterQuery, Model, Types } from 'mongoose';
+import { User, UserDocument, UserRole } from './schemas/user.schema';
 import { hashPassword } from '../common/utils/password.util';
+
+export interface ListUsersQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
+  isBanned?: boolean;
+  isSubscribed?: boolean;
+  isVip?: boolean;
+  gender?: string;
+  role?: UserRole;
+}
+
+export interface PaginatedUsers {
+  items: UserDocument[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
 
 @Injectable()
 export class UsersService {
@@ -27,6 +46,9 @@ export class UsersService {
     interestedIn: string;
     isVip?: boolean;
     creatorInviteId?: string | null;
+    role?: UserRole;
+    registrationIp?: string | null;
+    userAgent?: string | null;
   }): Promise<UserDocument> {
     const passwordHash = await hashPassword(data.password);
     return this.userModel.create({
@@ -37,7 +59,38 @@ export class UsersService {
       interestedIn: data.interestedIn,
       isVip: Boolean(data.isVip),
       creatorInviteId: data.creatorInviteId ?? null,
+      role: data.role ?? 'user',
+      registrationIp: data.registrationIp ?? null,
+      userAgent: data.userAgent ?? null,
     });
+  }
+
+  async createAdmin(data: {
+    firstName: string;
+    email: string;
+    password: string;
+  }): Promise<UserDocument> {
+    const passwordHash = await hashPassword(data.password);
+    return this.userModel.create({
+      firstName: data.firstName.trim(),
+      email: data.email.toLowerCase().trim(),
+      password: passwordHash,
+      role: 'admin',
+      gender: null,
+      interestedIn: null,
+    });
+  }
+
+  async updatePassword(
+    userId: string,
+    password: string,
+  ): Promise<UserDocument> {
+    const passwordHash = await hashPassword(password);
+    const user = await this.userModel
+      .findByIdAndUpdate(userId, { password: passwordHash }, { new: true })
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
   async updateGender(userId: string, gender: string): Promise<UserDocument> {
@@ -89,10 +142,7 @@ export class UsersService {
     return user;
   }
 
-  async banUser(
-    userId: string,
-    reason: string,
-  ): Promise<UserDocument> {
+  async banUser(userId: string, reason: string): Promise<UserDocument> {
     const user = await this.userModel
       .findByIdAndUpdate(
         userId,
@@ -107,5 +157,77 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
-}
 
+  async unbanUser(userId: string): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          isBanned: false,
+          banReason: null,
+          bannedAt: null,
+        },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async listUsers(query: ListUsersQuery): Promise<PaginatedUsers> {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10));
+    const filter: FilterQuery<UserDocument> = {};
+
+    if (query.role) {
+      filter.role = query.role;
+    } else {
+      // Include legacy users that predate the role field.
+      filter.role = { $ne: 'admin' };
+    }
+
+    if (typeof query.isBanned === 'boolean') {
+      filter.isBanned = query.isBanned;
+    }
+    if (typeof query.isSubscribed === 'boolean') {
+      filter.isSubscribed = query.isSubscribed;
+    }
+    if (typeof query.isVip === 'boolean') {
+      // Creators: isVip === true. Normal users: missing/false.
+      filter.isVip = query.isVip ? true : { $ne: true };
+    }
+    if (query.gender) {
+      filter.gender = query.gender;
+    }
+
+    const search = query.search?.trim();
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      filter.$or = [
+        { firstName: regex },
+        { email: regex },
+        { country: regex },
+        { registrationIp: regex },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.userModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.userModel.countDocuments(filter).exec(),
+    ]);
+
+    return {
+      items,
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit) || 1),
+    };
+  }
+}

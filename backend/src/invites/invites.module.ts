@@ -17,6 +17,6 @@ import { MailModule } from '../mail/mail.module';
   ],
   controllers: [InvitesController],
   providers: [InvitesService],
-  exports: [InvitesService],
+  exports: [InvitesService, MongooseModule],
 })
 export class InvitesModule {}

@@ -1,9 +1,7 @@
 import { Module } from '@nestjs/common';
 
 /**
- * Admin — later.
- * Reports triage / bans.
+ * @deprecated Use `src/admin/admin.module` instead.
  */
 @Module({})
 export class AdminModule {}
-

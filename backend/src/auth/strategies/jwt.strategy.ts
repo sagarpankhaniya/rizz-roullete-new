@@ -19,11 +19,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: { userId?: string; email?: string }): JwtPayload {
+  validate(payload: {
+    userId?: string;
+    email?: string;
+    role?: 'user' | 'admin';
+  }): JwtPayload {
     if (!payload.userId || !payload.email) {
       throw new UnauthorizedException();
     }
-    return { userId: payload.userId, email: payload.email };
+    return {
+      userId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+    };
   }
 }
 
