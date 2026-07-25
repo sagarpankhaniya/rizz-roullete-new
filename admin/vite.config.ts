@@ -4,6 +4,7 @@ import svgr from "vite-plugin-svgr";
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/admin/",
   server: {
     port: 5174,
     proxy: {

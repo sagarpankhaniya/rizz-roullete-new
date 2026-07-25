@@ -1,5 +1,6 @@
 import axios from "axios";
 import { clearAuthSession, getToken } from "./auth-storage";
+import { withBase } from "./base";
 
 export const api = axios.create({
   baseURL: "/api",
@@ -36,7 +37,7 @@ api.interceptors.response.use(
     if (status === 401 && !isPublicAuth && !handlingUnauthorized) {
       handlingUnauthorized = true;
       clearAuthSession();
-      window.location.href = "/signin";
+      window.location.href = withBase("/signin");
     }
 
     return Promise.reject(error);

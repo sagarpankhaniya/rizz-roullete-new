@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import PageMeta from "../../components/common/PageMeta";
+import { assetUrl } from "../../lib/base";
 
 export default function NotFound() {
   return (
@@ -11,9 +12,13 @@ export default function NotFound() {
             ERROR
           </h1>
 
-          <img src="/images/error/404.svg" alt="404" className="dark:hidden" />
           <img
-            src="/images/error/404-dark.svg"
+            src={assetUrl("images/error/404.svg")}
+            alt="404"
+            className="dark:hidden"
+          />
+          <img
+            src={assetUrl("images/error/404-dark.svg")}
             alt="404"
             className="hidden dark:block"
           />

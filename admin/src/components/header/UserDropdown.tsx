@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { useAuth } from "../../context/AuthContext";
+import { assetUrl } from "../../lib/base";
 
 export default function UserDropdown() {
   const { admin, logout } = useAuth();
@@ -27,7 +28,7 @@ export default function UserDropdown() {
         className="dropdown-toggle flex items-center text-gray-700 dark:text-gray-400"
       >
         <span className="mr-3 h-11 w-11 overflow-hidden rounded-full">
-          <img src="/images/user/owner.jpg" alt="User" />
+          <img src={assetUrl("images/user/owner.jpg")} alt="User" />
         </span>
         <span className="text-theme-sm mr-1 block font-medium">
           {admin?.firstName || "Admin"}

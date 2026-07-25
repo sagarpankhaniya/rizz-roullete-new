@@ -1,3 +1,5 @@
+import { withBase } from "./base";
+
 const TOKEN_KEY = "admin_token";
 const ADMIN_KEY = "admin_user";
 const REMEMBER_KEY = "admin_remember";
@@ -59,5 +61,5 @@ export function clearAuthSession() {
 /** Full logout: clear storage and hard-reload to login. */
 export function forceLogoutToLogin() {
   clearAuthSession();
-  window.location.href = "/signin";
+  window.location.href = withBase("/signin");
 }
