@@ -6,6 +6,7 @@ import { clearToken, getToken, setToken } from './utils/auth';
 import { clearStoredUser, setStoredUser } from './utils/user';
 import { disconnectSocket } from './services/socket';
 import { fetchProfile } from './services/profile';
+import { bootstrapCameraFromUserGesture } from './utils/cameraBootstrap';
 
 type UserData = {
   firstName?: string;
@@ -85,7 +86,10 @@ function AppShell() {
     applyUser(userData);
     // Force a fresh socket so JWT auth picks up the new token
     disconnectSocket();
-    enterCall();
+    // Kick off camera in this click stack (required on iOS), then enter call.
+    void bootstrapCameraFromUserGesture().finally(() => {
+      enterCall();
+    });
   };
 
   const handleLogout = () => {

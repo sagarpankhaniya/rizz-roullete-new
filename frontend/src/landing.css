@@ -1373,6 +1373,22 @@ h1 {
   pointer-events: auto;
 }
 
+.partner-verify-message {
+  flex: 1 0 100%;
+  margin: 0 0 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: balance;
+}
+
 .partner-verify-actions .hot-button,
 .partner-verify-actions .ghost-button {
   min-height: 42px;
@@ -2818,6 +2834,18 @@ h1 {
   .partner-loading-label {
     bottom: calc(200px + env(safe-area-inset-bottom));
     font-size: 11px;
+  }
+
+  .partner-loading-layer.has-actions .partner-loading-label {
+    bottom: calc(250px + env(safe-area-inset-bottom));
+  }
+
+  .partner-verify-actions {
+    bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+
+  .partner-verify-message {
+    font-size: 12px;
   }
 
   .self-video {

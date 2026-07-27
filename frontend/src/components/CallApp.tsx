@@ -40,6 +40,7 @@ import {
   createAgeSession,
   runGoCamAgeVerification,
 } from '../services/ageVerification';
+import { takeBootstrappedCamera } from '../utils/cameraBootstrap';
 import { clearToken } from '../utils/auth';
 import { createPortal } from 'react-dom';
 import {
@@ -83,7 +84,8 @@ type GenderCheckStatus =
   | 'mismatch'
   | 'banned'
   | 'retry'
-  | 'age_retry';
+  | 'age_retry'
+  | 'needs_camera';
 
 export function CallApp({
   mode = 'moderated',
@@ -227,6 +229,26 @@ export function CallApp({
         }
         stopPreview();
       }
+
+      // Prefer stream opened during login/register tap (iOS-safe).
+      const bootstrapped = takeBootstrappedCamera();
+      if (bootstrapped) {
+        const track = bootstrapped.getVideoTracks()[0];
+        if (track && track.readyState === 'live') {
+          previewStreamRef.current = bootstrapped;
+          setPreviewFacing('user');
+          setHasPreview(true);
+          if (previewVideoRef.current) {
+            const video = previewVideoRef.current;
+            video.srcObject = bootstrapped;
+            video.muted = true;
+            await video.play().catch(() => undefined);
+          }
+          return;
+        }
+        bootstrapped.getTracks().forEach((t) => t.stop());
+      }
+
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error(
@@ -260,7 +282,7 @@ export function CallApp({
             : '';
         if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
           throw new Error(
-            'Camera permission denied. Allow camera access for this site, then tap Retry.',
+            'Camera permission denied. Allow camera access for this site, then tap Start Verification.',
           );
         }
         if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
@@ -268,13 +290,13 @@ export function CallApp({
         }
         if (name === 'NotReadableError' || name === 'TrackStartError') {
           throw new Error(
-            'Camera is busy in another app. Close it, then tap Retry.',
+            'Camera is busy in another app. Close it, then tap Start Verification.',
           );
         }
         throw new Error(
           error instanceof Error
             ? error.message
-            : 'Camera access failed. Tap Retry Verification to try again.',
+            : 'Camera access failed. Tap Start Verification to try again.',
         );
       }
     },
@@ -426,10 +448,12 @@ export function CallApp({
     genderCheck.status === 'idle' ||
     genderCheck.status === 'checking' ||
     genderCheck.status === 'age_checking';
+  const needsCameraTap = genderCheck.status === 'needs_camera';
   const verifyFailed =
     genderCheck.status === 'mismatch' ||
     genderCheck.status === 'retry' ||
-    genderCheck.status === 'age_retry';
+    genderCheck.status === 'age_retry' ||
+    needsCameraTap;
   const isSearching =
     isSkipping ||
     isVerifying ||
@@ -446,15 +470,17 @@ export function CallApp({
     ? genderCheck.status === 'age_checking'
       ? 'Confirming age…'
       : 'Verifying…'
-    : verifyFailed
-      ? genderCheck.status === 'mismatch'
-        ? 'Profile mismatch'
-        : genderCheck.status === 'age_retry'
-          ? 'Age check needed'
-          : 'Verification needed'
-      : isConnecting
-        ? 'Connecting…'
-        : 'Searching…';
+    : needsCameraTap
+      ? 'Camera access needed'
+      : verifyFailed
+        ? genderCheck.status === 'mismatch'
+          ? 'Profile mismatch'
+          : genderCheck.status === 'age_retry'
+            ? 'Age check needed'
+            : 'Verification needed'
+        : isConnecting
+          ? 'Connecting…'
+          : 'Searching…';
 
   // Re-check the live camera every 10s during an active call so a verified
   // profile cannot be swapped for another person after matchmaking starts.
@@ -861,28 +887,36 @@ export function CallApp({
   };
 
   // Verify against live camera before matchmaking.
-  // Mobile browsers (especially iOS Safari) require a user gesture for
-  // getUserMedia — auto-starting from useEffect causes "Verification paused".
+  // Login/register already opens the camera in the same tap (iOS-safe).
+  // If that stream is present, auto-start; otherwise prompt for a tap on mobile.
   useEffect(() => {
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
 
-    const needsGesture =
-      typeof window !== 'undefined' &&
-      (window.matchMedia('(pointer: coarse)').matches ||
+    void (async () => {
+      await ensurePreview();
+      if (previewStreamRef.current) {
+        void verifyProfileAndStart();
+        return;
+      }
+
+      const needsGesture =
+        window.matchMedia('(pointer: coarse)').matches ||
         /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    if (needsGesture) {
-      setGenderCheck({
-        status: 'retry',
-        message: 'Tap Retry Verification to allow camera and continue.',
-      });
-      return;
-    }
+      if (needsGesture) {
+        setGenderCheck({
+          status: 'needs_camera',
+          message:
+            'Tap Start Verification and allow camera access to continue.',
+        });
+        return;
+      }
 
-    void verifyProfileAndStart();
-  }, [verifyProfileAndStart]);
+      void verifyProfileAndStart();
+    })();
+  }, [ensurePreview, verifyProfileAndStart]);
 
   // After 1 minute of searching with no match → show Retry / Log Out modal
   useEffect(() => {
@@ -1074,9 +1108,11 @@ export function CallApp({
         ? genderCheck.status === 'age_checking'
           ? 'Age verification…'
           : 'Verifying your profile…'
-        : verifyFailed
-          ? 'Verification paused'
-          : 'Finding your spark…';
+        : needsCameraTap
+          ? 'Allow camera'
+          : verifyFailed
+            ? 'Verification paused'
+            : 'Finding your spark…';
 
   const partnerSubtitle = partnerFeedReady
     ? 'Live now'
@@ -1085,7 +1121,7 @@ export function CallApp({
         ? 'Complete the age check overlay'
         : 'Checking camera…'
       : verifyFailed
-        ? 'Retry to continue'
+        ? genderCheck.message || 'Tap Start Verification to continue'
         : isConnecting
           ? 'Connecting video…'
           : 'Spinning the roulette';
@@ -1213,12 +1249,13 @@ export function CallApp({
             )}
             {verifyFailed && (
               <div className="partner-verify-actions">
+                <p className="partner-verify-message">{genderCheck.message}</p>
                 <button
                   type="button"
                   className="hot-button"
                   onClick={() => void verifyProfileAndStart()}
                 >
-                  Retry Verification
+                  {needsCameraTap ? 'Start Verification' : 'Retry Verification'}
                 </button>
                 <button
                   type="button"

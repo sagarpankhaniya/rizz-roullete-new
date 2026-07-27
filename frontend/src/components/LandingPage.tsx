@@ -186,6 +186,7 @@ function SignupPanel({
       const result = await res.json();
       if (result.success) {
         setToken(result.token);
+        // onRegister bootstraps camera from this user gesture (iOS requirement).
         onRegister?.(result.user, result.token);
       } else if (result.code === 'USER_BANNED') {
         onBanned?.(form.email.trim().toLowerCase());
