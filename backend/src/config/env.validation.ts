@@ -19,10 +19,19 @@ export const envSchema = z.object({
 
   CORS_ORIGINS: z.string().min(1),
 
+  /** Self-hosted LiveKit — keys must match livekit.yaml on the VPS */
   LIVEKIT_API_KEY: z.string().min(1),
   LIVEKIT_API_SECRET: z.string().min(1),
-  LIVEKIT_URL: z.string().min(1),
-  LIVEKIT_HOST: z.string().min(1),
+  LIVEKIT_URL: z
+    .string()
+    .min(1)
+    .refine(
+      (v) => v.startsWith('ws://') || v.startsWith('wss://'),
+      'LIVEKIT_URL must be a WebSocket URL (ws:// or wss://)',
+    ),
+  LIVEKIT_ROOM_EMPTY_TIMEOUT: z.coerce.number().int().positive().optional(),
+  LIVEKIT_MAX_PARTICIPANTS: z.coerce.number().int().positive().optional(),
+  LIVEKIT_TOKEN_TTL: z.string().optional(),
 
   TURN_URL: z.string().optional(),
   TURN_USERNAME: z.string().optional(),

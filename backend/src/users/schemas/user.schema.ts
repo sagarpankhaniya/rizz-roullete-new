@@ -72,6 +72,16 @@ export class User {
 
   @Prop({ type: Date, default: null })
   bannedAt: Date | null;
+
+  /** Set after successful Go.cam age verification (18+). */
+  @Prop({ type: Boolean, default: false, index: true })
+  ageVerified: boolean;
+
+  @Prop({ type: Date, default: null })
+  ageVerifiedAt: Date | null;
+
+  @Prop({ type: Number, default: null })
+  ageVerificationSessionId: number | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

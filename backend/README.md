@@ -18,9 +18,8 @@ Copy `.env.example` → `.env`. Key variables:
 | `MONGODB_URI` | Call session persistence |
 | `REDIS_URL` (or `REDIS_HOST`/`PORT`) | Presence, waiting queue, Socket.IO adapter |
 | `REDIS_KEY_PREFIX` | Key namespace (default `rizz:`) |
-| `LIVEKIT_URL` | WebSocket URL for browsers |
-| `LIVEKIT_HOST` | HTTP host for Room Service API |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | From self-hosted `livekit.yaml` |
+| `LIVEKIT_URL` | Browser WebSocket URL (`ws://` / `wss://`); Nest derives the HTTP Room API host from it |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Must match keys in the self-hosted `livekit.yaml` |
 | `LIVEKIT_ROOM_EMPTY_TIMEOUT` / `LIVEKIT_MAX_PARTICIPANTS` / `LIVEKIT_TOKEN_TTL` | Room/token tunables |
 
 ## Architecture

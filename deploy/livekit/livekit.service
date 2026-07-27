@@ -1,0 +1,29 @@
+[Unit]
+Description=LiveKit SFU (self-hosted, native)
+Documentation=https://docs.livekit.io/home/self-hosting/
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=livekit
+Group=livekit
+ExecStart=/usr/local/bin/livekit-server --config /etc/livekit/livekit.yaml
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+# Harden: no new privileges, private tmp
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/livekit
+# Ambient capabilities not required when binding 7880/7881 as non-root
+# (ports > 1024). UDP media ports are also > 1024.
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=livekit
+
+[Install]
+WantedBy=multi-user.target

@@ -5,13 +5,21 @@ import {
   RoomServiceClient,
   type VideoGrant,
 } from 'livekit-server-sdk';
+import { livekitWsUrlToHttpHost } from './livekit-url.util';
 
 /**
- * LivekitService is responsible only for room creation and token generation
- * against the self-hosted LiveKit server.
+ * LivekitService — room lifecycle + participant JWT minting for the
+ * self-hosted LiveKit server (no LiveKit Cloud).
  *
- * - LIVEKIT_HOST — HTTP(S) API for RoomServiceClient
- * - LIVEKIT_URL  — WebSocket URL handed to browser clients
+ * Configure on the Ubuntu VPS via backend/.env (see .env.example):
+ *   LIVEKIT_URL              — WebSocket URL returned to browsers (ws:// or wss://)
+ *   LIVEKIT_API_KEY          — must match keys in the LiveKit server config (livekit.yaml)
+ *   LIVEKIT_API_SECRET       — must match secrets in the LiveKit server config
+ *   LIVEKIT_ROOM_EMPTY_TIMEOUT
+ *   LIVEKIT_MAX_PARTICIPANTS
+ *   LIVEKIT_TOKEN_TTL
+ *
+ * RoomServiceClient talks to the same host over HTTP(S), derived from LIVEKIT_URL.
  */
 @Injectable()
 export class LivekitService implements OnModuleInit {
@@ -19,8 +27,10 @@ export class LivekitService implements OnModuleInit {
   private roomService!: RoomServiceClient;
   private apiKey!: string;
   private apiSecret!: string;
+  /** WebSocket URL handed to the frontend (from LIVEKIT_URL). */
   private livekitUrl!: string;
-  private livekitHost!: string;
+  /** HTTP(S) API base for RoomServiceClient (derived from LIVEKIT_URL). */
+  private apiHost!: string;
   private roomEmptyTimeout!: number;
   private maxParticipants!: number;
   private tokenTtl!: string;
@@ -31,7 +41,7 @@ export class LivekitService implements OnModuleInit {
     this.apiKey = this.config.getOrThrow<string>('livekit.apiKey');
     this.apiSecret = this.config.getOrThrow<string>('livekit.apiSecret');
     this.livekitUrl = this.config.getOrThrow<string>('livekit.url');
-    this.livekitHost = this.config.getOrThrow<string>('livekit.host');
+    this.apiHost = livekitWsUrlToHttpHost(this.livekitUrl);
     this.roomEmptyTimeout =
       this.config.get<number>('livekit.roomEmptyTimeout') ?? 300;
     this.maxParticipants =
@@ -39,16 +49,17 @@ export class LivekitService implements OnModuleInit {
     this.tokenTtl = this.config.get<string>('livekit.tokenTtl') ?? '2h';
 
     this.roomService = new RoomServiceClient(
-      this.livekitHost,
+      this.apiHost,
       this.apiKey,
       this.apiSecret,
     );
 
     this.logger.log(
-      `LiveKit configured — host=${this.livekitHost} url=${this.livekitUrl}`,
+      `Self-hosted LiveKit ready — clientUrl=${this.livekitUrl} apiHost=${this.apiHost}`,
     );
   }
 
+  /** Client WebSocket URL — included in the `matched` Socket.IO payload. */
   getClientUrl(): string {
     return this.livekitUrl;
   }
@@ -70,6 +81,10 @@ export class LivekitService implements OnModuleInit {
     }
   }
 
+  /**
+   * Mints a participant JWT signed with the self-hosted API key/secret.
+   * Valid against any LiveKit server that shares those credentials.
+   */
   async createAccessToken(
     identity: string,
     roomName: string,

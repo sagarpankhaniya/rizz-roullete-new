@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"ignoreDeprecations": "5.0",
+		"target": "es5",
+		"removeComments": false,
+		"preserveConstEnums": false,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"rootDir": "./app",
+		"sourceMap": true,
+		"listFiles": false,
+		"listEmittedFiles": false,
+		"strict": true,
+		"pretty": true,
+		"declaration": false,
+		"strictNullChecks": false,
+		"allowSyntheticDefaultImports": true
+	}
+}

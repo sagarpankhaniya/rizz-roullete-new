@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { ProfileModule } from '../profile/profile.module';
 import { GenderVerificationModule } from '../gender-verification/gender-verification.module';
+import { AgeVerificationModule } from '../age-verification/age-verification.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { GenderVerificationModule } from '../gender-verification/gender-verifica
     UsersModule,
     ProfileModule,
     GenderVerificationModule,
+    AgeVerificationModule,
   ],
   providers: [MatchingGateway],
 })

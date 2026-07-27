@@ -139,7 +139,7 @@ function AppShell() {
 
 function App() {
   return (
-    <BrowserRouter basename="/admin/">
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<AppShell />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -36,6 +36,10 @@ import {
   verifyVideoFrame,
   type GenderVerificationResponse,
 } from '../services/genderVerification';
+import {
+  createAgeSession,
+  runGoCamAgeVerification,
+} from '../services/ageVerification';
 import { clearToken } from '../utils/auth';
 import { createPortal } from 'react-dom';
 import {
@@ -74,10 +78,12 @@ interface CallAppProps {
 type GenderCheckStatus =
   | 'idle'
   | 'checking'
+  | 'age_checking'
   | 'verified'
   | 'mismatch'
   | 'banned'
-  | 'retry';
+  | 'retry'
+  | 'age_retry';
 
 export function CallApp({
   mode = 'moderated',
@@ -289,10 +295,37 @@ export function CallApp({
 
       if (verificationPassed && matchingFrames >= 2) {
         setGenderCheck({
-          status: 'verified',
-          message: 'Profile verified.',
+          status: 'age_checking',
+          message: 'Gender matched. Confirming you are 18+…',
         });
-        startCall();
+
+        try {
+          const session = await createAgeSession();
+          if (!session.alreadyVerified) {
+            await runGoCamAgeVerification(session);
+          }
+          setGenderCheck({
+            status: 'verified',
+            message: 'Profile and age verified.',
+          });
+          startCall();
+        } catch (ageError) {
+          const code =
+            ageError instanceof Error
+              ? (ageError as Error & { code?: string }).code
+              : undefined;
+          if (code === 'USER_BANNED') {
+            markBanned();
+            return;
+          }
+          setGenderCheck({
+            status: 'age_retry',
+            message:
+              ageError instanceof Error
+                ? ageError.message
+                : 'Age verification failed. Please retry.',
+          });
+        }
         return;
       }
 
@@ -338,9 +371,13 @@ export function CallApp({
   const isConnected =
     phase === 'in_call' || connectionState === ConnectionState.Connected;
   const isVerifying =
-    genderCheck.status === 'idle' || genderCheck.status === 'checking';
+    genderCheck.status === 'idle' ||
+    genderCheck.status === 'checking' ||
+    genderCheck.status === 'age_checking';
   const verifyFailed =
-    genderCheck.status === 'mismatch' || genderCheck.status === 'retry';
+    genderCheck.status === 'mismatch' ||
+    genderCheck.status === 'retry' ||
+    genderCheck.status === 'age_retry';
   const isSearching =
     isSkipping ||
     isVerifying ||
@@ -354,17 +391,30 @@ export function CallApp({
   const showPartnerLoading = !partnerFeedReady || isVerifying || verifyFailed;
   const videoReady = partnerFeedReady && genderCheck.status === 'verified';
   const partnerLoadingLabel = isVerifying
-    ? 'Verifying…'
+    ? genderCheck.status === 'age_checking'
+      ? 'Confirming age…'
+      : 'Verifying…'
     : verifyFailed
       ? genderCheck.status === 'mismatch'
         ? 'Profile mismatch'
-        : 'Verification needed'
+        : genderCheck.status === 'age_retry'
+          ? 'Age check needed'
+          : 'Verification needed'
       : isConnecting
         ? 'Connecting…'
         : 'Searching…';
 
   // Re-check the live camera every 10s during an active call so a verified
   // profile cannot be swapped for another person after matchmaking starts.
+  // Callbacks are read via refs so re-renders (chat, connection flickers, etc.)
+  // do not reset the interval and silently skip every tick.
+  const clearRemoteMediaRef = useRef(clearRemoteMedia);
+  clearRemoteMediaRef.current = clearRemoteMedia;
+  const disconnectRef = useRef(disconnect);
+  disconnectRef.current = disconnect;
+  const leaveCallRef = useRef(leaveCall);
+  leaveCallRef.current = leaveCall;
+
   useEffect(() => {
     if (genderCheck.status !== 'verified') return;
     if (!isConnected) return;
@@ -381,15 +431,25 @@ export function CallApp({
         status: 'banned',
         message: '',
       });
-      clearRemoteMedia();
-      await disconnect();
-      await leaveCall();
+      clearRemoteMediaRef.current();
+      await disconnectRef.current();
+      await leaveCallRef.current();
+    };
+
+    const pickReadyVideo = () => {
+      const candidates = [localVideoRef.current, previewVideoRef.current];
+      for (const video of candidates) {
+        if (video && video.readyState >= 2 && video.videoWidth > 0) {
+          return video;
+        }
+      }
+      return null;
     };
 
     const tick = async () => {
       if (cancelled || inFlight || !camEnabledRef.current) return;
-      const video = localVideoRef.current ?? previewVideoRef.current;
-      if (!video || video.readyState < 2 || video.videoWidth <= 0) return;
+      const video = pickReadyVideo();
+      if (!video) return;
 
       inFlight = true;
       try {
@@ -412,6 +472,7 @@ export function CallApp({
       }
     };
 
+    void tick();
     const intervalId = window.setInterval(() => {
       void tick();
     }, 10_000);
@@ -420,14 +481,7 @@ export function CallApp({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [
-    genderCheck.status,
-    isConnected,
-    clearRemoteMedia,
-    disconnect,
-    leaveCall,
-    localVideoRef,
-  ]);
+  }, [genderCheck.status, isConnected, localVideoRef]);
 
   const hasActiveFilters =
     !!countryFilter || genderPref !== 'everyone' || tags.length > 0;
@@ -515,19 +569,23 @@ export function CallApp({
 
   const openSettings = () => {
     // Desktop uses inline filter pills — settings sheet is mobile-only (matches client)
-    if (isMobileView) setShowSettings(true);
+    if (!isMobileView) return;
+    closeTipSheet();
+    setShowSettings(true);
   };
 
   const closeDesktopPickers = () => {
     setShowCountryPicker(false);
     setShowGenderPicker(false);
     setShowTagInput(false);
-    setShowTipPicker(false);
   };
+
+  const closeTipSheet = () => setShowTipPicker(false);
 
   const openSubscription = () => {
     setShowSettings(false);
     closeDesktopPickers();
+    closeTipSheet();
     setShowSubscription(true);
   };
 
@@ -854,13 +912,16 @@ export function CallApp({
   }, [isConnected, isSkipping, hasPreview]);
 
   useEffect(() => {
-    if (!showSettings) return;
+    if (!showSettings && !showTipPicker) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeSettings();
+      if (e.key === 'Escape') {
+        closeSettings();
+        closeTipSheet();
+      }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [showSettings]);
+  }, [showSettings, showTipPicker]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
@@ -877,12 +938,7 @@ export function CallApp({
   }, []);
 
   useEffect(() => {
-    if (
-      !showCountryPicker &&
-      !showGenderPicker &&
-      !showTagInput &&
-      !showTipPicker
-    ) {
+    if (!showCountryPicker && !showGenderPicker && !showTagInput) {
       return;
     }
 
@@ -893,7 +949,7 @@ export function CallApp({
 
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [showCountryPicker, showGenderPicker, showTagInput, showTipPicker]);
+  }, [showCountryPicker, showGenderPicker, showTagInput]);
 
   const handleClose = async () => {
     await disconnect();
@@ -933,7 +989,9 @@ export function CallApp({
   };
 
   const statusLine = isVerifying
-    ? `Verifying profile for ${username}…`
+    ? genderCheck.status === 'age_checking'
+      ? `Confirming ${username} is 18+…`
+      : `Verifying profile for ${username}…`
     : verifyFailed
       ? genderCheck.message
       : showPartnerLoading
@@ -946,7 +1004,9 @@ export function CallApp({
     partnerFeedReady && remoteIdentity
       ? remoteIdentity
       : isVerifying
-        ? 'Verifying your profile…'
+        ? genderCheck.status === 'age_checking'
+          ? 'Age verification…'
+          : 'Verifying your profile…'
         : verifyFailed
           ? 'Verification paused'
           : 'Finding your spark…';
@@ -954,7 +1014,9 @@ export function CallApp({
   const partnerSubtitle = partnerFeedReady
     ? 'Live now'
     : isVerifying
-      ? 'Checking camera…'
+      ? genderCheck.status === 'age_checking'
+        ? 'Complete the age check overlay'
+        : 'Checking camera…'
       : verifyFailed
         ? 'Retry to continue'
         : isConnecting
@@ -993,39 +1055,58 @@ export function CallApp({
       </header>
 
       <div className="live-hero">
-        {/* Mobile: always show Skip / Next (desktop-skip is hidden ≤768px) */}
-        <button
-          className="hot-button mobile-skip-btn"
-          type="button"
-          onClick={() => void handleLeave()}
-          disabled={genderCheck.status !== 'verified'}
-          aria-label="Skip to next match"
-        >
-          <Play size={16} /> Skip / Next
-        </button>
-
-        {isConnected ? (
+        <div className="live-hero-skip-row">
+          {/* Mobile: always show Skip / Next (desktop-skip is hidden ≤768px) */}
           <button
-            className="hot-button desktop-skip-btn"
+            className="hot-button mobile-skip-btn"
             type="button"
             onClick={() => void handleLeave()}
+            disabled={genderCheck.status !== 'verified'}
             aria-label="Skip to next match"
           >
             <Play size={16} /> Skip / Next
           </button>
-        ) : (
-          <button className="start-chat desktop-searching-btn" type="button" disabled>
-            <Play size={16} />
-            <span>
-              {isVerifying
-                ? 'Verifying'
-                : verifyFailed
-                  ? 'Paused'
-                  : 'Searching'}
-            </span>
-            {!verifyFailed && <SearchingDots />}
-          </button>
-        )}
+
+          {isConnected ? (
+            <button
+              className="hot-button desktop-skip-btn"
+              type="button"
+              onClick={() => void handleLeave()}
+              aria-label="Skip to next match"
+            >
+              <Play size={16} /> Skip / Next
+            </button>
+          ) : (
+            <button className="start-chat desktop-searching-btn" type="button" disabled>
+              <Play size={16} />
+              <span>
+                {isVerifying
+                  ? 'Verifying'
+                  : verifyFailed
+                    ? 'Paused'
+                    : 'Searching'}
+              </span>
+              {!verifyFailed && <SearchingDots />}
+            </button>
+          )}
+
+          {Boolean(match?.partnerIsVip) && (
+            <button
+              type="button"
+              className={`tip-hero-btn${showTipPicker ? ' active' : ''}`}
+              onClick={() => {
+                setShowTipPicker((v) => !v);
+                setShowSettings(false);
+                closeDesktopPickers();
+                setTipStatus('');
+              }}
+              aria-pressed={showTipPicker}
+              aria-label="Tip VIP creator"
+            >
+              💸 Tip
+            </button>
+          )}
+        </div>
         <p>{statusLine}</p>
         <button
           className="unlock-button desktop-premium-btn"
@@ -1223,66 +1304,6 @@ export function CallApp({
               )}
             </div>
 
-            {Boolean(match?.partnerIsVip) && (
-              <div className="filter-pill-wrap">
-                <button
-                  type="button"
-                  className={selectedTip || customTip ? 'active' : ''}
-                  onClick={() => {
-                    setShowTipPicker((v) => !v);
-                    setShowCountryPicker(false);
-                    setShowGenderPicker(false);
-                    setShowTagInput(false);
-                    setTipStatus('');
-                  }}
-                >
-                  💸 Tip
-                </button>
-                {showTipPicker && (
-                  <div className="country-dropdown tip-dropdown">
-                    <p className="tag-hint tip-dropdown-title">
-                      Tip VIP creator {match?.partnerIdentity || ''}
-                    </p>
-                    <div className="tip-options">
-                      {TIP_PRESETS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          className={selectedTip === opt.id ? 'sel' : ''}
-                          onClick={() => {
-                            setSelectedTip(opt.id);
-                            setCustomTip('');
-                            setTipStatus('');
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="Custom amount…"
-                      value={customTip}
-                      onChange={(e) => {
-                        setCustomTip(e.target.value);
-                        setSelectedTip('custom');
-                        setTipStatus('');
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="tip-send-btn"
-                      onClick={() => void sendTip()}
-                      disabled={tipSending}
-                    >
-                      {tipSending ? 'Sending…' : 'Send Tip'}
-                    </button>
-                    {tipStatus && <p className="tip-status">{tipStatus}</p>}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="partner-copy">
@@ -1602,52 +1623,72 @@ export function CallApp({
                 ))}
               </div>
             </section>
+          </div>
+        </div>
+      )}
 
-            {Boolean(match?.partnerIsVip) && (
-              <section className="live-settings-section">
-                <h4>Tip Creator</h4>
-                <p className="live-settings-current">
-                  Tip VIP {match?.partnerIdentity || 'creator'}
-                </p>
-                <div className="live-settings-options tip-options">
-                  {TIP_PRESETS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={selectedTip === opt.id ? 'sel' : ''}
-                      onClick={() => {
-                        setSelectedTip(opt.id);
-                        setCustomTip('');
-                        setTipStatus('');
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  className="live-settings-input"
-                  inputMode="decimal"
-                  placeholder="Custom amount…"
-                  value={customTip}
-                  onChange={(e) => {
-                    setCustomTip(e.target.value);
-                    setSelectedTip('custom');
+      {showTipPicker && Boolean(match?.partnerIsVip) && (
+        <div
+          className="live-settings-overlay tip-sheet-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tip-sheet-title"
+          onClick={() => setShowTipPicker(false)}
+        >
+          <div
+            className="live-settings-panel tip-sheet-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="live-settings-head">
+              <h3 id="tip-sheet-title">Tip Creator</h3>
+              <button
+                type="button"
+                onClick={() => setShowTipPicker(false)}
+                aria-label="Close tip"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="live-settings-current">
+              Tip VIP {match?.partnerIdentity || 'creator'}
+            </p>
+            <div className="live-settings-options tip-options tip-sheet-options">
+              {TIP_PRESETS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={selectedTip === opt.id ? 'sel' : ''}
+                  onClick={() => {
+                    setSelectedTip(opt.id);
+                    setCustomTip('');
                     setTipStatus('');
                   }}
-                />
-                <button
-                  type="button"
-                  className="tip-send-btn"
-                  onClick={() => void sendTip()}
-                  disabled={tipSending}
                 >
-                  {tipSending ? 'Sending…' : 'Send Tip'}
+                  {opt.label}
                 </button>
-                {tipStatus && <p className="tip-status">{tipStatus}</p>}
-              </section>
-            )}
+              ))}
+            </div>
+            <input
+              type="text"
+              className="live-settings-input"
+              inputMode="decimal"
+              placeholder="Custom amount…"
+              value={customTip}
+              onChange={(e) => {
+                setCustomTip(e.target.value);
+                setSelectedTip('custom');
+                setTipStatus('');
+              }}
+            />
+            <button
+              type="button"
+              className="tip-send-btn tip-sheet-send"
+              onClick={() => void sendTip()}
+              disabled={tipSending}
+            >
+              {tipSending ? 'Sending…' : 'Send Tip'}
+            </button>
+            {tipStatus && <p className="tip-status tip-sheet-status">{tipStatus}</p>}
           </div>
         </div>
       )}

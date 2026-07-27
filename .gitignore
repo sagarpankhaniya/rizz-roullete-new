@@ -4,10 +4,10 @@ build/
 coverage/
 .env
 .env.local
+deploy/livekit/credentials.env
+deploy/livekit/livekit.yaml
 *.log
 .DS_Store
 .idea/
 .vscode/
 *.tsbuildinfo
-
-.env

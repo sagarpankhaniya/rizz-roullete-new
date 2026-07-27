@@ -52,7 +52,10 @@ async function resolveFrontCameraOptions(): Promise<VideoCaptureOptions> {
 }
 
 /**
- * Connects to a LiveKit room using credentials from NestJS.
+ * Connects to a self-hosted LiveKit room using credentials from NestJS.
+ *
+ * The WebSocket URL and participant token come only from the `matched`
+ * Socket.IO payload — never from frontend env or LiveKit Cloud.
  *
  * Always prefers the front (user-facing) camera on mobile.
  */
@@ -272,13 +275,13 @@ export function useLiveKitRoom({
     setRemoteIdentity(null);
   }, []);
 
-  const disconnect = async () => {
+  const disconnect = useCallback(async () => {
     // Keep last local frame until CallApp restarts preview — only clear remote here
     clearRemoteMedia();
     await roomRef.current?.disconnect();
     roomRef.current = null;
     setConnectionState(ConnectionState.Disconnected);
-  };
+  }, [clearRemoteMedia]);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;

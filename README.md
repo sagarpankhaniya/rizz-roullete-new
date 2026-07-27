@@ -24,7 +24,10 @@ Random 1-to-1 video calling proof of concept. Focus: verify a **self-hosted Live
 ```
 frontend/   # Vite + React + TypeScript
 backend/    # NestJS + MongoDB + Socket.IO + LiveKit Server SDK
+go-cam/     # Official self-hosted Go.cam age verification (isolated)
 ```
+
+Age verification is provided by the official open-source [Go.cam](https://github.com/Godotcam/goCamOpenSource) service under `go-cam/`. It runs independently of NestJS/React. See [`go-cam/INTEGRATION.md`](./go-cam/INTEGRATION.md) for install, update, and backend integration notes.
 
 ## Prerequisites
 
@@ -34,26 +37,32 @@ backend/    # NestJS + MongoDB + Socket.IO + LiveKit Server SDK
 
 ## Configure LiveKit (backend)
 
-Copy env files and point them at your LiveKit host:
+Point NestJS at your **self-hosted** LiveKit server on the Ubuntu VPS.
+Full native install (binary + systemd + Nginx, no Docker):
+[`deploy/livekit/README.md`](./deploy/livekit/README.md).
+
+Copy env files and set credentials that match `/etc/livekit/livekit.yaml`:
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-Set in `backend/.env`:
+Set in `backend/.env` (copy key/secret from `deploy/livekit/credentials.env` after install):
 
 ```env
-LIVEKIT_URL=ws://YOUR_UBUNTU_HOST:7880      # browser WebSocket URL
-LIVEKIT_HOST=http://YOUR_UBUNTU_HOST:7880   # NestJS RoomService API
-LIVEKIT_API_KEY=devkey                      # must match livekit.yaml
-LIVEKIT_API_SECRET=secret
+LIVEKIT_URL=wss://livekit.YOUR_DOMAIN
+LIVEKIT_API_KEY=<from credentials.env>
+LIVEKIT_API_SECRET=<from credentials.env>
+LIVEKIT_ROOM_EMPTY_TIMEOUT=300
+LIVEKIT_MAX_PARTICIPANTS=2
+LIVEKIT_TOKEN_TTL=2h
 MONGODB_URI=mongodb://localhost:27017/rizz-routlet
 PORT=3001
 CORS_ORIGIN=http://localhost:5173
 ```
 
-`LIVEKIT_URL` is what React uses. `LIVEKIT_HOST` is what NestJS uses for `RoomServiceClient`.
+The frontend never reads LiveKit env vars — it connects only to `livekitUrl` from the `matched` event.
 
 ## Run
 
@@ -74,6 +83,17 @@ npm run dev
 ```
 
 Open http://localhost:5173 in **two** browser windows, allow camera/mic, and click **Start Call** in both.
+
+### Go.cam (age verification) — optional / independent
+
+```bash
+cd go-cam
+cp .env.example .env
+npm install
+npm run startDev    # or: npm run startProd
+```
+
+Verify: `curl -s http://localhost:3300/test` → `test`. Full guide: [`go-cam/INTEGRATION.md`](./go-cam/INTEGRATION.md).
 
 ## Backend architecture
 

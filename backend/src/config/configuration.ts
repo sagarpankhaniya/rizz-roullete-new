@@ -34,6 +34,25 @@ export default () => ({
     ),
   },
 
+  /** Official self-hosted Go.cam (see /go-cam). */
+  goCam: {
+    /** Server-side reachability / internal base (http://localhost:3300). */
+    baseUrl: process.env.GO_CAM_BASE_URL ?? 'http://localhost:3300',
+    /**
+     * Browser-facing base for iframe/popup URLs.
+     * Behind HTTPS ngrok, set to the Vite proxy path, e.g.
+     * https://YOUR.ngrok-free.dev/go-cam-avs
+     * If unset, Nest derives https://<request-origin>/go-cam-avs for HTTPS pages.
+     */
+    publicUrl: process.env.GO_CAM_PUBLIC_URL ?? '',
+    cipherKey:
+      process.env.GO_CAM_CIPHER_KEY ??
+      'zIkmW2zEgzlTLTRC5xeMbcOhHcE5sBHB',
+    callbackUrl:
+      process.env.GO_CAM_CALLBACK_URL ??
+      'http://localhost:3001/api/age-verification/callback',
+  },
+
   redis: {
     url: process.env.REDIS_URL,
     host: process.env.REDIS_HOST ?? '127.0.0.1',
@@ -43,9 +62,15 @@ export default () => ({
     keyPrefix: process.env.REDIS_KEY_PREFIX ?? 'rizz:',
   },
 
+  /**
+   * Self-hosted LiveKit on the Ubuntu VPS (not LiveKit Cloud).
+   * Set LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET to match
+   * the keys in the LiveKit server config (e.g. /etc/livekit.yaml).
+   * RoomService HTTP host is derived from LIVEKIT_URL (ws→http, wss→https).
+   */
   livekit: {
+    /** Browser WebSocket URL returned on `matched` (ws:// or wss://) */
     url: process.env.LIVEKIT_URL,
-    host: process.env.LIVEKIT_HOST,
     apiKey: process.env.LIVEKIT_API_KEY,
     apiSecret: process.env.LIVEKIT_API_SECRET,
     /** Empty-room auto-close timeout in seconds */

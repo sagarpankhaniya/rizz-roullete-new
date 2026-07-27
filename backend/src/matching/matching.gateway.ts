@@ -20,6 +20,7 @@ import { RedisService } from '../redis/redis.service';
 import { UsersService } from '../users/users.service';
 import { PreferenceQueueService } from '../profile/preference-queue.service';
 import { GenderVerificationService } from '../gender-verification/gender-verification.service';
+import { AgeVerificationService } from '../age-verification/age-verification.service';
 import {
   ChatMessagePayload,
   PartnerLeftPayload,
@@ -70,6 +71,7 @@ export class MatchingGateway
     private readonly usersService: UsersService,
     private readonly preferenceQueue: PreferenceQueueService,
     private readonly genderVerification: GenderVerificationService,
+    private readonly ageVerification: AgeVerificationService,
   ) {}
 
   afterInit(server: Server) {
@@ -156,6 +158,13 @@ export class MatchingGateway
       if (!(await this.genderVerification.isVerified(socketUser.userId))) {
         client.emit(SOCKET_EVENTS.ERROR, {
           message: 'Complete camera gender verification before matching.',
+        });
+        return;
+      }
+
+      if (!(await this.ageVerification.isVerified(socketUser.userId))) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Complete age verification (18+) before matching.',
         });
         return;
       }

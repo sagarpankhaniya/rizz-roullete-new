@@ -12,7 +12,6 @@ describe('validateEnv', () => {
     LIVEKIT_API_KEY: 'devkey',
     LIVEKIT_API_SECRET: 'secret',
     LIVEKIT_URL: 'ws://localhost:7880',
-    LIVEKIT_HOST: 'http://localhost:7880',
   };
 
   it('parses a valid configuration', () => {

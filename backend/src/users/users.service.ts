@@ -166,12 +166,73 @@ export class UsersService {
           isBanned: false,
           banReason: null,
           bannedAt: null,
+          // Require a fresh Go.cam check after unban.
+          ageVerified: false,
+          ageVerifiedAt: null,
+          ageVerificationSessionId: null,
         },
         { new: true },
       )
       .exec();
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  async markAgeVerified(
+    userId: string,
+    sessionId?: number | null,
+  ): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          ageVerified: true,
+          ageVerifiedAt: new Date(),
+          ...(typeof sessionId === 'number'
+            ? { ageVerificationSessionId: sessionId }
+            : {}),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  /**
+   * Adult Go.cam success: persist ageVerified and clear an under-18 age ban
+   * from a previous attempt (does not clear gender/other bans).
+   */
+  async markAgeVerifiedClearingAgeBan(
+    userId: string,
+    sessionId?: number | null,
+  ): Promise<UserDocument> {
+    const user = await this.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    const ageBan =
+      user.isBanned &&
+      typeof user.banReason === 'string' &&
+      /age verification|18 or older|under.?18/i.test(user.banReason);
+
+    const userUpdated = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          ageVerified: true,
+          ageVerifiedAt: new Date(),
+          ...(typeof sessionId === 'number'
+            ? { ageVerificationSessionId: sessionId }
+            : {}),
+          ...(ageBan
+            ? { isBanned: false, banReason: null, bannedAt: null }
+            : {}),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!userUpdated) throw new NotFoundException('User not found');
+    return userUpdated;
   }
 
   async listUsers(query: ListUsersQuery): Promise<PaginatedUsers> {

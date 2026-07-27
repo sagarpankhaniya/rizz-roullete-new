@@ -1934,6 +1934,77 @@ h1 {
   width: 100%;
 }
 
+.tip-sheet-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.tip-sheet-panel .live-settings-head {
+  margin-bottom: 0;
+}
+
+.tip-sheet-options {
+  padding: 0;
+}
+
+.tip-sheet-options button {
+  flex: 1 1 auto;
+  min-width: 72px;
+}
+
+.tip-sheet-send {
+  margin: 4px 0 0;
+  width: 100%;
+}
+
+.tip-sheet-status {
+  margin: 0;
+}
+
+.bottom-controls .tip-control.active {
+  background: linear-gradient(135deg, #ff2d7a, #ffb428);
+  border-color: transparent;
+  color: #fff !important;
+}
+
+.live-hero-skip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tip-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff0f7;
+  font-family: 'Outfit', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.tip-hero-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.tip-hero-btn.active {
+  background: linear-gradient(135deg, #ff2d7a, #ffb428);
+  border-color: transparent;
+  color: #fff;
+}
+
 .tip-toast {
   position: fixed;
   z-index: 80;
@@ -2647,12 +2718,24 @@ h1 {
     display: none !important;
   }
 
-  .mobile-skip-btn {
+  .live-hero .mobile-skip-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     min-height: 36px;
     padding: 0 14px;
+    font-size: 12px;
+  }
+
+  .live-hero-skip-row {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+
+  .tip-hero-btn {
+    min-height: 36px;
+    padding: 0 12px;
     font-size: 12px;
   }
 
@@ -2674,12 +2757,6 @@ h1 {
     padding: 4px 12px 6px;
     border: none;
     background: transparent;
-  }
-
-  .live-hero .mobile-skip-btn {
-    grid-column: 1;
-    grid-row: 1;
-    justify-self: start;
   }
 
   .live-hero .desktop-premium-btn {

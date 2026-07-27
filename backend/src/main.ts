@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { json } from 'express';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 
@@ -11,6 +11,8 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   app.use(json({ limit: '3mb' }));
+  // Go.cam posts application/x-www-form-urlencoded callbacks.
+  app.use(urlencoded({ extended: true }));
   // Honor X-Forwarded-For behind ngrok / reverse proxies (registration IP).
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
