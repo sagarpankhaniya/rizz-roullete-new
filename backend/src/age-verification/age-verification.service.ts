@@ -64,6 +64,8 @@ export class AgeVerificationService {
   private readonly cipherKey: string;
   private readonly callbackUrl: string;
   private readonly frontendUrl: string;
+  /** Go.cam age gate — only enforced in production (skipped for local/dev). */
+  private readonly required: boolean;
 
   constructor(
     config: ConfigService,
@@ -86,6 +88,13 @@ export class AgeVerificationService {
     this.frontendUrl = (
       config.get<string>('frontendUrl') ?? 'http://localhost:5173'
     ).replace(/\/$/, '');
+    const nodeEnv = config.get<string>('nodeEnv') ?? 'development';
+    this.required = nodeEnv === 'production';
+    if (!this.required) {
+      this.logger.warn(
+        `Age verification disabled (NODE_ENV=${nodeEnv}). Set NODE_ENV=production to enforce.`,
+      );
+    }
   }
 
   async getStatus(userId: string): Promise<AgeVerificationStatus> {
@@ -94,7 +103,7 @@ export class AgeVerificationService {
       throw new NotFoundException('User not found.');
     }
     return {
-      ageVerified: Boolean(user.ageVerified),
+      ageVerified: this.required ? Boolean(user.ageVerified) : true,
       isBanned: Boolean(user.isBanned),
       banReason: user.banReason ?? null,
     };
@@ -120,7 +129,7 @@ export class AgeVerificationService {
         code: 'GENDER_REQUIRED',
       });
     }
-    if (user.ageVerified) {
+    if (!this.required || user.ageVerified) {
       const browserBase = this.browserBaseUrl(req);
       return {
         alreadyVerified: true,
@@ -292,6 +301,9 @@ export class AgeVerificationService {
   }
 
   async isVerified(userId: string): Promise<boolean> {
+    if (!this.required) {
+      return true;
+    }
     const user = await this.usersService.findById(userId);
     return Boolean(user?.ageVerified);
   }

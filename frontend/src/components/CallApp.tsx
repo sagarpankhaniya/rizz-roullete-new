@@ -308,6 +308,9 @@ export function CallApp({
             status: 'verified',
             message: 'Profile and age verified.',
           });
+          // Start the no-match clock only after verification finishes —
+          // Go.cam age checks often take longer than the 60s search window.
+          searchStartedAtRef.current = Date.now();
           startCall();
         } catch (ageError) {
           const code =
@@ -813,7 +816,6 @@ export function CallApp({
   useEffect(() => {
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
-    searchStartedAtRef.current = Date.now();
     void verifyProfileAndStart();
   }, [verifyProfileAndStart]);
 
