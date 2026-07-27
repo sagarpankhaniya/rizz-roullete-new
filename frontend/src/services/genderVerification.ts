@@ -14,6 +14,18 @@ export type GenderVerificationResponse = {
 };
 
 const VIDEO_READY_TIMEOUT_MS = 10_000;
+const FRAME_WARMUP_TIMEOUT_MS = 5_000;
+
+function nestErrorMessage(
+  body: { error?: string; message?: string | string[]; code?: string },
+  fallback: string,
+): string {
+  const msg = body.message;
+  if (typeof msg === 'string' && msg.trim()) return msg;
+  if (Array.isArray(msg) && msg.length > 0) return msg.map(String).join(' ');
+  if (typeof body.error === 'string' && body.error.trim()) return body.error;
+  return fallback;
+}
 
 function waitForVideo(video: HTMLVideoElement): Promise<void> {
   if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
@@ -45,6 +57,33 @@ function waitForVideo(video: HTMLVideoElement): Promise<void> {
   });
 }
 
+/** Avoid capturing the black first frames common on iOS/Android after getUserMedia. */
+async function waitForUsableFrame(video: HTMLVideoElement): Promise<void> {
+  await video.play().catch(() => undefined);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return;
+
+  const deadline = Date.now() + FRAME_WARMUP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      context.drawImage(video, 0, 0, 32, 32);
+      const { data } = context.getImageData(0, 0, 32, 32);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += data[i] + data[i + 1] + data[i + 2];
+      }
+      const average = sum / ((data.length / 4) * 3);
+      // Real camera frames are rarely near-black once the sensor is live.
+      if (average > 12) return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+}
+
 function captureFrame(video: HTMLVideoElement): string {
   const maxWidth = 640;
   const scale = Math.min(1, maxWidth / video.videoWidth);
@@ -68,6 +107,7 @@ export async function verifyVideoFrame(
 ): Promise<GenderVerificationResponse> {
   if (options?.waitForReady !== false) {
     await waitForVideo(video);
+    await waitForUsableFrame(video);
   } else if (video.videoWidth <= 0 || video.videoHeight <= 0) {
     throw new Error('Camera frame is not ready.');
   }
@@ -79,13 +119,14 @@ export async function verifyVideoFrame(
   });
   const body = (await response.json().catch(() => ({}))) as
     | GenderVerificationResponse
-    | { error?: string; code?: string };
+    | { error?: string; message?: string | string[]; code?: string };
 
   if (!response.ok) {
     const err = new Error(
-      'error' in body && body.error
-        ? body.error
-        : `Gender verification failed (${response.status}).`,
+      nestErrorMessage(
+        body as { error?: string; message?: string | string[] },
+        `Gender verification failed (${response.status}).`,
+      ),
     ) as Error & { code?: string };
     if ('code' in body && typeof body.code === 'string') {
       err.code = body.code;

@@ -96,21 +96,24 @@ function loadOfficialSdk(): Promise<void> {
 async function parseJson<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as
     | T
-    | { error?: string; code?: string; message?: string };
+    | { error?: string; code?: string; message?: string | string[] };
 
   if (!response.ok) {
-    const err = new Error(
-      (body as { error?: string; message?: string }).error ||
-        (body as { message?: string }).message ||
-        `Age verification request failed (${response.status}).`,
-    ) as Error & { code?: string };
-    if (
-      typeof body === 'object' &&
-      body &&
-      'code' in body &&
-      typeof (body as { code?: string }).code === 'string'
-    ) {
-      err.code = (body as { code: string }).code;
+    const raw = body as {
+      error?: string;
+      message?: string | string[];
+      code?: string;
+    };
+    const message = Array.isArray(raw.message)
+      ? raw.message.map(String).join(' ')
+      : typeof raw.message === 'string' && raw.message.trim()
+        ? raw.message
+        : typeof raw.error === 'string' && raw.error.trim()
+          ? raw.error
+          : `Age verification request failed (${response.status}).`;
+    const err = new Error(message) as Error & { code?: string };
+    if (typeof raw.code === 'string') {
+      err.code = raw.code;
     }
     throw err;
   }
@@ -235,9 +238,11 @@ async function runIframeFlow(iframeUrl: string): Promise<void> {
     iframe.id = 'avsFactoryIframe';
     iframe.name = 'avsFactoryIframe';
     iframe.title = 'Go.cam age verification';
-    iframe.allow =
-      `camera ${window.location.href} ${iframeUrl}; microphone ${window.location.href} ${iframeUrl}`;
+    // Broad allow-list: iOS Safari often blocks camera in iframes when the
+    // Permissions-Policy allow attribute is origin-restricted.
+    iframe.allow = 'camera *; microphone *; autoplay *; fullscreen *';
     iframe.setAttribute('allowtransparency', 'true');
+    iframe.setAttribute('playsinline', 'true');
     iframe.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#0b0b0f';
     // Critical: navigate the iframe only — never the top window.
     iframe.src = iframeUrl;

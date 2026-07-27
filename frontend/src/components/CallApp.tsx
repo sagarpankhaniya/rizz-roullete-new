@@ -205,34 +205,81 @@ export function CallApp({
   camEnabledRef.current = camEnabled;
 
   /** Keep / restore local PiP without a black gap (reuses stream when possible). */
-  const ensurePreview = useCallback(async () => {
-    if (!camEnabledRef.current) return;
-    if (previewStreamRef.current) {
-      const track = previewStreamRef.current.getVideoTracks()[0];
-      if (track && track.readyState === 'live') {
-        if (previewVideoRef.current) {
-          previewVideoRef.current.srcObject = previewStreamRef.current;
+  const ensurePreview = useCallback(
+    async (options?: { required?: boolean }) => {
+      if (!camEnabledRef.current) {
+        if (options?.required) {
+          throw new Error('Turn on your camera to continue verification.');
         }
-        setHasPreview(true);
         return;
       }
-      stopPreview();
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'user' } },
-        audio: false,
-      });
-      previewStreamRef.current = stream;
-      setPreviewFacing('user');
-      setHasPreview(true);
-      if (previewVideoRef.current) {
-        previewVideoRef.current.srcObject = stream;
+      if (previewStreamRef.current) {
+        const track = previewStreamRef.current.getVideoTracks()[0];
+        if (track && track.readyState === 'live') {
+          if (previewVideoRef.current) {
+            const video = previewVideoRef.current;
+            video.srcObject = previewStreamRef.current;
+            video.muted = true;
+            await video.play().catch(() => undefined);
+          }
+          setHasPreview(true);
+          return;
+        }
+        stopPreview();
       }
-    } catch {
-      setHasPreview(false);
-    }
-  }, [stopPreview]);
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error(
+            'Camera API is unavailable in this browser. Open in Safari/Chrome over HTTPS.',
+          );
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'user' },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        });
+        previewStreamRef.current = stream;
+        setPreviewFacing('user');
+        setHasPreview(true);
+        if (previewVideoRef.current) {
+          const video = previewVideoRef.current;
+          video.srcObject = stream;
+          video.muted = true;
+          // iOS requires an explicit play() after assigning srcObject.
+          await video.play().catch(() => undefined);
+        }
+      } catch (error) {
+        setHasPreview(false);
+        if (!options?.required) return;
+        const name =
+          error && typeof error === 'object' && 'name' in error
+            ? String((error as { name?: string }).name)
+            : '';
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+          throw new Error(
+            'Camera permission denied. Allow camera access for this site, then tap Retry.',
+          );
+        }
+        if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+          throw new Error('No camera was found on this device.');
+        }
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+          throw new Error(
+            'Camera is busy in another app. Close it, then tap Retry.',
+          );
+        }
+        throw new Error(
+          error instanceof Error
+            ? error.message
+            : 'Camera access failed. Tap Retry Verification to try again.',
+        );
+      }
+    },
+    [stopPreview],
+  );
 
   const verifyProfileAndStart = useCallback(async () => {
     if (verificationRunningRef.current) return;
@@ -254,7 +301,7 @@ export function CallApp({
     };
 
     try {
-      await ensurePreview();
+      await ensurePreview({ required: true });
       const video = previewVideoRef.current;
       if (!video) {
         throw new Error('Camera preview is unavailable.');
@@ -264,6 +311,8 @@ export function CallApp({
       let sawMultipleFaces = false;
       let verificationPassed = false;
       let accountBanned = false;
+      // Mobile cameras often need a beat after play() before frames are usable.
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
       for (let index = 0; index < 3; index += 1) {
         const result = await verifyVideoFrame(video);
         sawMultipleFaces ||= Boolean(result.multipleFaces);
@@ -811,11 +860,27 @@ export function CallApp({
     }
   };
 
-  // Verify the authenticated user's profile against live camera frames before
-  // allowing the socket to enter matchmaking.
+  // Verify against live camera before matchmaking.
+  // Mobile browsers (especially iOS Safari) require a user gesture for
+  // getUserMedia — auto-starting from useEffect causes "Verification paused".
   useEffect(() => {
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
+
+    const needsGesture =
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(pointer: coarse)').matches ||
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+    if (needsGesture) {
+      setGenderCheck({
+        status: 'retry',
+        message: 'Tap Retry Verification to allow camera and continue.',
+      });
+      return;
+    }
+
     void verifyProfileAndStart();
   }, [verifyProfileAndStart]);
 
