@@ -16,6 +16,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { InvitesModule } from './invites/invites.module';
 import { GenderVerificationModule } from './gender-verification/gender-verification.module';
 import { AgeVerificationModule } from './age-verification/age-verification.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AgeVerificationModule } from './age-verification/age-verification.modul
     SubscriptionsModule,
     GenderVerificationModule,
     AgeVerificationModule,
+    ReportsModule,
     RedisModule,
     PresenceModule,
     LivekitModule,

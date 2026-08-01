@@ -13,6 +13,8 @@ export interface WaitingUser {
   bucket: string;
   /** Creator-invite VIP flag from users.isVip */
   isVip?: boolean;
+  /** Mongo user id when authenticated */
+  userId?: string;
 }
 
 export interface StartCallPayload {
@@ -31,6 +33,8 @@ export interface MatchedPayload {
   partnerIdentity: string;
   /** Whether the remote partner has creator VIP */
   partnerIsVip: boolean;
+  /** Mongo user id of the remote partner (for reporting) */
+  partnerUserId: string | null;
 }
 
 export interface PartnerLeftPayload {

@@ -9,6 +9,8 @@ export interface MatchedPayload {
   identity: string;
   partnerIdentity: string;
   partnerIsVip: boolean;
+  /** Mongo user id of the remote partner (for reporting) */
+  partnerUserId: string | null;
 }
 
 export interface PartnerLeftPayload {

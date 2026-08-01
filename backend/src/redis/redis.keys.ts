@@ -36,6 +36,12 @@ export const RedisKeys = {
 
   /** LIST — async Mongo preference update jobs */
   prefUpdateQueue: () => 'jobs:pref-update',
+
+  /**
+   * SET — userIds that must never be rematched with this user
+   * (populated from misconduct reports, both directions).
+   */
+  matchBlock: (userId: string) => `matchmaking:block:${userId}`,
 } as const;
 
 export type PresenceStatus = 'online' | 'waiting' | 'in_call';

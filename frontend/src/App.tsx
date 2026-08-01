@@ -6,7 +6,12 @@ import { clearToken, getToken, setToken } from './utils/auth';
 import { clearStoredUser, setStoredUser } from './utils/user';
 import { disconnectSocket } from './services/socket';
 import { fetchProfile } from './services/profile';
-import { bootstrapCameraFromUserGesture } from './utils/cameraBootstrap';
+import {
+  bootstrapCameraFromUserGesture,
+  deviceNeedsCameraGesture,
+  deviceRequiresCameraTapGate,
+  discardBootstrappedCamera,
+} from './utils/cameraBootstrap';
 
 type UserData = {
   firstName?: string;
@@ -15,8 +20,11 @@ type UserData = {
 };
 
 function AppShell() {
-  const [screen, setScreen] = useState<'landing' | 'call'>('landing');
+  const [screen, setScreen] = useState<'landing' | 'call' | 'camera_gate'>(
+    'landing',
+  );
   const [bootstrapping, setBootstrapping] = useState(() => !!getToken());
+  const [cameraGateBusy, setCameraGateBusy] = useState(false);
   const [username, setUsername] = useState(() => {
     return localStorage.getItem('rizz_username') || 'Guest';
   });
@@ -42,7 +50,9 @@ function AppShell() {
     }
   };
 
-  // On reload: validate JWT via /api/profile, restore user, resume matching
+  // On reload: validate JWT via /api/profile, restore user, resume matching.
+  // Mobile/iOS cannot open the camera from a passive useEffect even when the
+  // site already has permission — gate behind a tap that bootstraps the stream.
   useEffect(() => {
     const token = getToken();
     if (!token) {
@@ -63,7 +73,18 @@ function AppShell() {
         applyUser(user);
         // Fresh socket so matching JWT auth picks up the stored token
         disconnectSocket();
-        setScreen('call');
+        if (deviceRequiresCameraTapGate()) {
+          // iOS: getUserMedia from this async restore stack will fail even with
+          // permission already granted — must wait for an explicit tap.
+          setScreen('camera_gate');
+        } else if (deviceNeedsCameraGesture()) {
+          // Android / other touch: permission is usually enough without a tap.
+          const opened = await bootstrapCameraFromUserGesture();
+          if (cancelled) return;
+          setScreen(opened ? 'call' : 'camera_gate');
+        } else {
+          setScreen('call');
+        }
       } catch {
         if (!cancelled) {
           clearToken();
@@ -92,7 +113,17 @@ function AppShell() {
     });
   };
 
+  const handleCameraGateContinue = () => {
+    if (cameraGateBusy) return;
+    setCameraGateBusy(true);
+    void bootstrapCameraFromUserGesture().finally(() => {
+      setCameraGateBusy(false);
+      enterCall();
+    });
+  };
+
   const handleLogout = () => {
+    discardBootstrappedCamera();
     disconnectSocket();
     clearToken();
     clearStoredUser();
@@ -121,6 +152,51 @@ function AppShell() {
     );
   }
 
+  if (screen === 'camera_gate') {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          padding: '24px',
+          background: '#050505',
+          color: '#fff0f7',
+          fontFamily: 'Outfit, sans-serif',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ maxWidth: 320 }}>
+          <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 16 }}>💘</div>
+          <div style={{ fontWeight: 800, fontSize: 22, marginBottom: 8 }}>
+            Rizz Roulette
+          </div>
+          <p
+            style={{
+              margin: '0 0 24px',
+              opacity: 0.72,
+              fontWeight: 500,
+              fontSize: 15,
+              lineHeight: 1.45,
+            }}
+          >
+            Camera permission is already set. Tap below to open your camera and
+            continue.
+          </p>
+          <button
+            type="button"
+            className="hot-button"
+            disabled={cameraGateBusy}
+            onClick={handleCameraGateContinue}
+            style={{ width: '100%', minHeight: 48 }}
+          >
+            {cameraGateBusy ? 'Opening camera…' : 'Continue'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (screen === 'landing') {
     return (
       <LandingPage
@@ -135,7 +211,10 @@ function AppShell() {
     <CallApp
       mode={mode}
       username={username}
-      onClose={() => setScreen('landing')}
+      onClose={() => {
+        discardBootstrappedCamera();
+        setScreen('landing');
+      }}
       onLogout={handleLogout}
     />
   );

@@ -7,11 +7,13 @@ import { MailModule } from '../mail/mail.module';
 import { RedisModule } from '../redis/redis.module';
 import { AuthModule } from '../auth/auth.module';
 import { InvitesModule } from '../invites/invites.module';
+import { ReportsModule } from '../reports/reports.module';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminCreatorsController } from './admin-creators.controller';
 import { AdminInvitesController } from './admin-invites.controller';
 import { AdminAnalyticsController } from './admin-analytics.controller';
+import { AdminReportsController } from '../reports/admin-reports.controller';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminUsersService } from './admin-users.service';
 import { AdminCreatorsService } from './admin-creators.service';
@@ -25,6 +27,7 @@ import { AdminAuthGuard } from './guards/admin-auth.guard';
     RedisModule,
     AuthModule,
     InvitesModule,
+    ReportsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -41,6 +44,7 @@ import { AdminAuthGuard } from './guards/admin-auth.guard';
     AdminCreatorsController,
     AdminInvitesController,
     AdminAnalyticsController,
+    AdminReportsController,
   ],
   providers: [
     AdminAuthService,

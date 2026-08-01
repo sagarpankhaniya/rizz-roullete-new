@@ -8,6 +8,7 @@ import Users from "./pages/Users";
 import UserView from "./pages/UserView";
 import Creators from "./pages/Creators";
 import CreatorView from "./pages/CreatorView";
+import Reports from "./pages/Reports";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import { GuestRoute, ProtectedRoute } from "./components/auth/RouteGuards";
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/users/:id" element={<UserView />} />
             <Route path="/creators" element={<Creators />} />
             <Route path="/creators/:id" element={<CreatorView />} />
+            <Route path="/reports" element={<Reports />} />
           </Route>
         </Route>
 

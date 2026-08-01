@@ -186,6 +186,8 @@ export class MatchingGateway
       const isVip = Boolean(
         (client.data.user as SocketUser | undefined)?.isVip,
       );
+      const userId =
+        (client.data.user as SocketUser | undefined)?.userId || '';
 
       const result = await this.matchmaking.enqueueOrMatch({
         socketId: client.id,
@@ -193,6 +195,7 @@ export class MatchingGateway
         gender: prefs.gender,
         interestedIn: prefs.interestedIn,
         isVip,
+        userId,
       });
 
       if (result.status === 'waiting') {

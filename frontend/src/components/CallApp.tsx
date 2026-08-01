@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKe
 import {
   Camera,
   Crown,
+  Flag,
   Heart,
   MessageCircle,
   Mic,
@@ -23,6 +24,7 @@ import { COUNTRIES } from '../data/countries';
 import type { RoomMode } from './LandingPage';
 import { SubscriptionModal } from './SubscriptionModal';
 import { UnbanRequestModal } from './UnbanRequestModal';
+import { ReportModal } from './ReportModal';
 import {
   clearStoredUser,
   getStoredUser,
@@ -37,10 +39,16 @@ import {
   type GenderVerificationResponse,
 } from '../services/genderVerification';
 import {
+  clearBootstrappedCameraRef,
+  deviceNeedsCameraGesture,
+  discardBootstrappedCamera,
+  parkCameraStream,
+  takeBootstrappedCamera,
+} from '../utils/cameraBootstrap';
+import {
   createAgeSession,
   runGoCamAgeVerification,
 } from '../services/ageVerification';
-import { takeBootstrappedCamera } from '../utils/cameraBootstrap';
 import { clearToken } from '../utils/auth';
 import { createPortal } from 'react-dom';
 import {
@@ -168,13 +176,16 @@ export function CallApp({
     message: 'Preparing your camera for profile verification…',
   });
   const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [tipToast, setTipToast] = useState<{
     amount: string;
     fromIdentity: string;
   } | null>(null);
 
   const stopPreview = useCallback(() => {
-    previewStreamRef.current?.getTracks().forEach((t) => t.stop());
+    const stream = previewStreamRef.current;
+    stream?.getTracks().forEach((t) => t.stop());
+    clearBootstrappedCameraRef(stream);
     previewStreamRef.current = null;
     if (previewVideoRef.current) {
       previewVideoRef.current.srcObject = null;
@@ -471,7 +482,7 @@ export function CallApp({
       ? 'Confirming age…'
       : 'Verifying…'
     : needsCameraTap
-      ? 'Camera access needed'
+      ? 'Tap to open camera'
       : verifyFailed
         ? genderCheck.status === 'mismatch'
           ? 'Profile mismatch'
@@ -844,6 +855,12 @@ export function CallApp({
     }
   }, [isConnected]);
 
+  useEffect(() => {
+    if (!isConnected) {
+      setShowReportModal(false);
+    }
+  }, [isConnected]);
+
   const flipCamera = async () => {
     // Live call: restart the published LiveKit track
     if (isConnected) {
@@ -887,36 +904,49 @@ export function CallApp({
   };
 
   // Verify against live camera before matchmaking.
-  // Login/register already opens the camera in the same tap (iOS-safe).
+  // Login/register (and the mobile restore gate) open the camera in a tap stack.
   // If that stream is present, auto-start; otherwise prompt for a tap on mobile.
+  // Use a cancel flag so React StrictMode's mount→unmount→remount cannot leave a
+  // stale `needs_camera` update after the remount already opened the camera.
   useEffect(() => {
     if (autoStartedRef.current) return;
-    autoStartedRef.current = true;
+    let cancelled = false;
 
     void (async () => {
       await ensurePreview();
-      if (previewStreamRef.current) {
+      if (cancelled) return;
+      autoStartedRef.current = true;
+
+      const live = previewStreamRef.current?.getVideoTracks()[0];
+      if (live && live.readyState === 'live') {
         void verifyProfileAndStart();
         return;
       }
 
-      const needsGesture =
-        window.matchMedia('(pointer: coarse)').matches ||
-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-      if (needsGesture) {
+      if (deviceNeedsCameraGesture()) {
         setGenderCheck({
           status: 'needs_camera',
           message:
-            'Tap Start Verification and allow camera access to continue.',
+            'Tap Start Verification to open your camera and continue.',
         });
         return;
       }
 
       void verifyProfileAndStart();
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [ensurePreview, verifyProfileAndStart]);
+
+  // Safety net: camera already live but UI stuck on the tap prompt (mobile race).
+  useEffect(() => {
+    if (genderCheck.status !== 'needs_camera') return;
+    const live = previewStreamRef.current?.getVideoTracks()[0];
+    if (!hasPreview && !(live && live.readyState === 'live')) return;
+    void verifyProfileAndStart();
+  }, [genderCheck.status, hasPreview, verifyProfileAndStart]);
 
   // After 1 minute of searching with no match → show Retry / Log Out modal
   useEffect(() => {
@@ -1003,8 +1033,19 @@ export function CallApp({
     stopPreview,
   ]);
 
-  // Release preview tracks only on unmount
-  useEffect(() => () => stopPreview(), [stopPreview]);
+  // Park live preview across StrictMode remount; hard-stop only via stopPreview
+  // (LiveKit handoff / logout). Leaving the stream running lets remount reclaim it.
+  useEffect(
+    () => () => {
+      const stream = previewStreamRef.current;
+      previewStreamRef.current = null;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = null;
+      }
+      parkCameraStream(stream);
+    },
+    [],
+  );
 
   useEffect(() => {
     if ((!isConnected || isSkipping) && previewVideoRef.current && previewStreamRef.current) {
@@ -1055,12 +1096,16 @@ export function CallApp({
   const handleClose = async () => {
     await disconnect();
     await leaveCall();
+    stopPreview();
+    discardBootstrappedCamera();
     onClose?.();
   };
 
   const handleLogout = async () => {
     await disconnect();
     await leaveCall();
+    stopPreview();
+    discardBootstrappedCamera();
     onLogout?.();
   };
 
@@ -1109,7 +1154,7 @@ export function CallApp({
           ? 'Age verification…'
           : 'Verifying your profile…'
         : needsCameraTap
-          ? 'Allow camera'
+          ? 'Start verification'
           : verifyFailed
             ? 'Verification paused'
             : 'Finding your spark…';
@@ -1193,6 +1238,22 @@ export function CallApp({
             </button>
           )}
 
+          {isConnected && Boolean(match?.partnerUserId) && (
+            <button
+              type="button"
+              className="report-hero-btn"
+              onClick={() => {
+                setShowReportModal(true);
+                setShowTipPicker(false);
+                setShowSettings(false);
+                closeDesktopPickers();
+              }}
+              aria-label="Report this user"
+            >
+              <Flag size={14} /> Report
+            </button>
+          )}
+
           {Boolean(match?.partnerIsVip) && (
             <button
               type="button"
@@ -1222,7 +1283,7 @@ export function CallApp({
 
       <main className="video-stage">
         <section
-          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}`}
+          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${verifyFailed ? ' verify-failed' : ''}`}
           aria-label="Partner video"
         >
           <div className="partner-photo" aria-hidden="true" />
@@ -1242,28 +1303,35 @@ export function CallApp({
             <div className="live-partner-placeholder">
               {isUnmod ? '🎲' : '💘'}
             </div>
-            {showPartnerLoading && (
+            {showPartnerLoading && !verifyFailed && (
               <span className="partner-loading-label">
                 {partnerLoadingLabel}
               </span>
             )}
             {verifyFailed && (
               <div className="partner-verify-actions">
-                <p className="partner-verify-message">{genderCheck.message}</p>
-                <button
-                  type="button"
-                  className="hot-button"
-                  onClick={() => void verifyProfileAndStart()}
-                >
-                  {needsCameraTap ? 'Start Verification' : 'Retry Verification'}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => void handleClose()}
-                >
-                  Back
-                </button>
+                <strong className="partner-verify-title">
+                  {needsCameraTap ? 'Start verification' : 'Verification paused'}
+                </strong>
+                {genderCheck.message ? (
+                  <p className="partner-verify-message">{genderCheck.message}</p>
+                ) : null}
+                <div className="partner-verify-buttons">
+                  <button
+                    type="button"
+                    className="hot-button"
+                    onClick={() => void verifyProfileAndStart()}
+                  >
+                    {needsCameraTap ? 'Start Verification' : 'Retry Verification'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleClose()}
+                  >
+                    Back
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1485,12 +1553,13 @@ export function CallApp({
               opacity: camEnabled && isConnected && !isSkipping ? 1 : 0,
             }}
           />
-          {(((!isConnected || isSkipping) && (!hasPreview || !camEnabled)) ||
-            (isConnected && !isSkipping && !camEnabled)) && (
-            <span className="live-self-label">
-              {camEnabled ? 'Your Camera' : 'Camera Off'}
-            </span>
-          )}
+          {!needsCameraTap &&
+            (((!isConnected || isSkipping) && (!hasPreview || !camEnabled)) ||
+              (isConnected && !isSkipping && !camEnabled)) && (
+              <span className="live-self-label">
+                {camEnabled ? 'Your Camera' : 'Camera Off'}
+              </span>
+            )}
           {maskOn && <span className="video-label mask-badge">🎭 VR</span>}
           {isVip && <span className="video-label vip-badge">VIP</span>}
           <b className="video-label you">You</b>
@@ -1897,6 +1966,22 @@ export function CallApp({
           </button>
         </div>
       )}
+
+      {showReportModal &&
+        match?.partnerUserId &&
+        createPortal(
+          <ReportModal
+            partnerName={match.partnerIdentity || remoteIdentity || 'partner'}
+            partnerUserId={match.partnerUserId}
+            roomName={match.roomName}
+            onClose={() => setShowReportModal(false)}
+            onSubmitted={() => {
+              setShowReportModal(false);
+              void handleLeave();
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }

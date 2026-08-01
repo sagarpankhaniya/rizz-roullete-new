@@ -6,6 +6,7 @@ import { CallSessionService } from '../call-session/call-session.service';
 import { PresenceService } from '../presence/presence.service';
 import { RedisService } from '../redis/redis.service';
 import { RedisKeys } from '../redis/redis.keys';
+import { ReportsService } from '../reports/reports.service';
 import {
   MatchedPayload,
   WaitingUser,
@@ -36,6 +37,7 @@ export interface EnqueueInput {
   gender: MatchPrefs['gender'];
   interestedIn: MatchPrefs['interestedIn'];
   isVip?: boolean;
+  userId?: string;
 }
 
 /**
@@ -48,12 +50,15 @@ export interface EnqueueInput {
  * ARGV[3]    = my interestedIn
  * ARGV[4]    = waiting-user key prefix (full Redis prefix + "matchmaking:waiting:")
  * ARGV[5]    = number of candidate bucket keys (N)
+ * ARGV[6]    = my userId (may be empty)
+ * ARGV[7]    = match-block key prefix (full Redis prefix + "matchmaking:block:")
  *
  * Returns partner socketId, or false if enqueued.
  *
  * For each candidate LPOP'd from a bucket, loads their hash and checks mutual
  * preference. Incompatible / stale entries are discarded (not re-queued) so a
  * later reconnect puts them back with fresh prefs.
+ * Report-blocked pairs are skipped (re-queued for others).
  */
 const TRY_MATCH_OR_ENQUEUE = `
 local mySocketId = ARGV[1]
@@ -61,12 +66,24 @@ local myGender = ARGV[2]
 local myInterested = ARGV[3]
 local metaPrefix = ARGV[4]
 local candidateCount = tonumber(ARGV[5])
+local myUserId = ARGV[6]
+local blockPrefix = ARGV[7]
 
 local function wants(interested, gender)
   if interested == 'everyone' then
     return true
   end
   return interested == gender
+end
+
+local function is_blocked(partnerUserId)
+  if myUserId == nil or myUserId == '' then
+    return false
+  end
+  if partnerUserId == nil or partnerUserId == '' then
+    return false
+  end
+  return redis.call('SISMEMBER', blockPrefix .. myUserId, partnerUserId) == 1
 end
 
 local function try_bucket(queueKey)
@@ -81,11 +98,14 @@ local function try_bucket(queueKey)
       -- Stale self-entry; do not re-queue here (we enqueue at the end)
     else
       local metaKey = metaPrefix .. partner
-      local meta = redis.call('HMGET', metaKey, 'gender', 'interestedIn')
+      local meta = redis.call('HMGET', metaKey, 'gender', 'interestedIn', 'userId')
       local pGender = meta[1]
       local pInterested = meta[2]
+      local pUserId = meta[3]
       if not pGender or not pInterested then
         redis.call('DEL', metaKey)
+      elseif is_blocked(pUserId) then
+        table.insert(skipped, partner)
       elseif wants(myInterested, pGender) and wants(pInterested, myGender) then
         for __, sid in ipairs(skipped) do
           redis.call('RPUSH', queueKey, sid)
@@ -144,6 +164,7 @@ export class MatchmakingService {
     private readonly presence: PresenceService,
     private readonly livekit: LivekitService,
     private readonly callSessions: CallSessionService,
+    private readonly reports: ReportsService,
   ) {}
 
   /** Wired from MatchingGateway.afterInit so we can reject zombie Redis partners. */
@@ -205,7 +226,14 @@ export class MatchmakingService {
    * Mark online + enqueue into a gender/preference bucket, or match immediately.
    */
   async enqueueOrMatch(input: EnqueueInput): Promise<MatchResult> {
-    const { socketId, identity, gender, interestedIn, isVip = false } = input;
+    const {
+      socketId,
+      identity,
+      gender,
+      interestedIn,
+      isVip = false,
+      userId = '',
+    } = input;
     const prefs: MatchPrefs = { gender, interestedIn };
     const bucket = ownBucket(prefs);
 
@@ -235,6 +263,7 @@ export class MatchmakingService {
       bucket,
       joinedAt,
       isVip: isVip ? '1' : '0',
+      userId: userId || '',
     });
 
     const candidateBucketIds = candidateBuckets(prefs);
@@ -243,6 +272,7 @@ export class MatchmakingService {
     );
     const ownQueueKey = this.redis.key(RedisKeys.waitingBucket(bucket));
     const metaPrefix = this.redis.key('matchmaking:waiting:');
+    const blockPrefix = this.redis.key('matchmaking:block:');
 
     const keys = [...candidateKeys, ownQueueKey];
     const partnerId = (await this.redis
@@ -256,6 +286,8 @@ export class MatchmakingService {
         interestedIn,
         metaPrefix,
         String(candidateKeys.length),
+        userId || '',
+        blockPrefix,
       )) as string | null;
 
     if (!partnerId) {
@@ -292,6 +324,7 @@ export class MatchmakingService {
         bucket,
         joinedAt: new Date(),
         isVip,
+        userId: userId || undefined,
       });
       return { status: 'waiting' };
     }
@@ -315,8 +348,29 @@ export class MatchmakingService {
         bucket,
         joinedAt: new Date(joinedAt),
         isVip,
+        userId: userId || undefined,
       });
       return { status: 'waiting' };
+    }
+
+    // Skip partners blocked by a prior misconduct report (either direction)
+    if (
+      userId &&
+      partnerMeta.userId &&
+      (await this.reports.isPairBlocked(userId, partnerMeta.userId))
+    ) {
+      this.logger.log(
+        `Skipping reported pair ${identity} ↔ ${partnerMeta.identity}; finding another match`,
+      );
+      await this.requeueUser(partnerMeta);
+      return this.enqueueOrMatch({
+        socketId,
+        identity,
+        gender,
+        interestedIn,
+        isVip,
+        userId,
+      });
     }
 
     try {
@@ -328,6 +382,7 @@ export class MatchmakingService {
         bucket,
         joinedAt: new Date(joinedAt),
         isVip,
+        userId: userId || undefined,
       });
       return { status: 'matched', matches };
     } catch (error) {
@@ -340,6 +395,7 @@ export class MatchmakingService {
         bucket,
         joinedAt: new Date(joinedAt),
         isVip,
+        userId: userId || undefined,
       });
       this.logger.error(
         `Match failed; re-queued ${partnerMeta.identity} and ${identity}`,
@@ -381,6 +437,7 @@ export class MatchmakingService {
         ownBucket({ gender: data.gender, interestedIn }),
       joinedAt: data.joinedAt ? new Date(data.joinedAt) : new Date(),
       isVip: data.isVip === '1' || data.isVip === 'true',
+      userId: data.userId || undefined,
     };
   }
 
@@ -399,6 +456,7 @@ export class MatchmakingService {
       bucket,
       joinedAt: user.joinedAt.toISOString(),
       isVip: user.isVip ? '1' : '0',
+      userId: user.userId || '',
     });
     await client.rpush(queueKey, user.socketId);
     await this.presence.setStatus(user.socketId, 'waiting');
@@ -455,6 +513,7 @@ export class MatchmakingService {
           identity: userA.identity,
           partnerIdentity: userB.identity,
           partnerIsVip: Boolean(userB.isVip),
+          partnerUserId: userB.userId || null,
         },
       },
       {
@@ -466,6 +525,7 @@ export class MatchmakingService {
           identity: userB.identity,
           partnerIdentity: userA.identity,
           partnerIsVip: Boolean(userA.isVip),
+          partnerUserId: userA.userId || null,
         },
       },
     ];
