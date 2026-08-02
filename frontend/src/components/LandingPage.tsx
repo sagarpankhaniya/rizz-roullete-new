@@ -1,4 +1,4 @@
-import { Play, ShieldCheck, LockKeyhole, Star, X, Sparkles, UserRound, Crown, BadgeCheck } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -9,56 +9,146 @@ import { UnbanRequestModal } from './UnbanRequestModal';
 export type RoomMode = 'moderated' | 'unmoderated';
 
 type ModeConfig = {
-  label: string;
   chip: string;
+  toggle: string;
   title: string;
   copy: string;
   cta: string;
   warning: string;
-  online: string;
-  speed: string;
-  plan: string;
-  bg: string;
+  signupCopy: string;
 };
+
+const ALL_STATS = [
+  { value: '2,312', label: 'Online Now' },
+  { value: '1:3', label: 'Best Female Ratio' },
+  { value: '3s', label: 'Avg Match' },
+  { value: '2,847', label: 'Verified Online' },
+  { value: '$0', label: 'VIP For Women' },
+  { value: '3s', label: 'Avg Match' },
+];
 
 const modes: Record<RoomMode, ModeConfig> = {
   moderated: {
-    label: 'Moderated',
-    chip: 'Moderated Mode',
-    title: 'Cute Cupid Matching',
-    copy: 'A candy-gloss space for flirty video chat with safer prompts, clean boundaries, and just enough butterflies.',
-    cta: 'Enter Cute Mode',
-    warning: '18+ only • consent-first • flirty prompts • moderated matching',
-    online: '2,312',
-    speed: '5s',
-    plan: 'Safe flirt',
-    bg: '/assets/landing-bg-1.jpg'
+    chip: 'Standard Room',
+    toggle: 'Standard',
+    title: 'Random video chat',
+    copy: 'Press start and you are in a live video call with a real person in about three seconds. Not clicking? Press Next. Free VIP for women keeps the best gender ratio in random video chat, so you are actually meeting women — not staring at an empty queue.',
+    cta: 'Start Video Chat',
+    warning:
+      '18+ only • Your camera stays off until you press start • No call is recorded • Nudity is not allowed in the standard room',
+    signupCopy:
+      'Pick a username and clear the age check. That is the whole sign-up — no real name, no phone number.',
   },
   unmoderated: {
-    label: 'Unmoderated',
-    chip: 'Unmoderated Mode',
-    title: 'Fast, Unfiltered Matching',
-    copy: 'A neon late-night roulette room with higher energy, premium entry, and fast-fire stranger matches.',
-    cta: 'Enter Unmoderated',
-    warning: '18+ only • respect consent • premium entry • high-intensity roulette',
-    online: '2,847',
-    speed: '3s',
-    plan: 'VIP heat',
-    bg: '/assets/landing-bg-2.jpg'
-  }
+    chip: 'Adult Room · 18+',
+    toggle: 'Adult 18+',
+    title: 'The 18+ room',
+    copy: 'Verified adults only, consent required, ID checked at the door. Every safety control stays exactly where it is — and VIP is free for women, permanently.',
+    cta: 'Enter 18+ Room',
+    warning:
+      'Verified adults only • Consent required on every call • Report, block and blur always on screen • Nothing recorded, nothing stored',
+    signupCopy:
+      'Pick a username and clear ID verification. Men choose a subscription next — women get VIP free.',
+  },
 };
-
 const plans = [
-  ['Weekly Trial', '$10', 'Short access for testing the unmoderated room.'],
-  ['Monthly', '$20', 'Flexible recurring access.'],
-  ['6 Monthly', '$100', 'Better value for regular matching.'],
-  ['1 Year', '$150', 'Best yearly subscription value.']
+  {
+    id: 'women-vip',
+    name: 'Women VIP',
+    price: '$0',
+    detail: 'Every feature, every filter, no card needed. Forever.',
+    free: true,
+  },
+  {
+    id: 'weekly',
+    name: 'Weekly',
+    price: '$10',
+    detail: 'Seven days in the 18+ room.',
+    free: false,
+  },
+  {
+    id: 'monthly',
+    name: 'Monthly',
+    price: '$20',
+    detail: 'Rolling, cancel any time.',
+    free: false,
+  },
+  {
+    id: '6-monthly',
+    name: '6 Monthly',
+    price: '$100',
+    detail: 'Works out at $16.60 a month.',
+    free: false,
+  },
+  {
+    id: 'yearly',
+    name: '1 Year',
+    price: '$150',
+    detail: 'Best value at $12.50 a month.',
+    free: false,
+  },
+];
+
+const SAFETY_TOOLS = [
+  {
+    icon: '🪪',
+    title: 'Age-verified entry',
+    copy: 'Face age-estimation plus government ID checks before your first call. Everyone you meet has cleared the same gate.',
+    note: 'Required in both rooms',
+  },
+  {
+    icon: '⚑',
+    title: 'One-tap report',
+    copy: 'Reporting ends the call instantly and sends the moderation team what they need to act on it. Reports are reviewed by people, not only by a model.',
+    note: 'Ends the call immediately',
+  },
+  {
+    icon: '⛔',
+    title: 'Permanent block',
+    copy: 'Block someone and the queue will never pair you again — including on any new account made from the same device.',
+    note: 'Device-level, not account-level',
+  },
+  {
+    icon: '◎',
+    title: 'Face blur',
+    copy: 'Join blurred and lift it only when you want to. Your camera never switches on until you press start.',
+    note: 'Toggle any time mid-call',
+  },
+  {
+    icon: '👁',
+    title: 'Live screening',
+    copy: 'Streams are scanned in real time for nudity in the standard room, and for any sign of a minor in both rooms. Matches are cut instantly.',
+    note: 'Always running',
+  },
+  {
+    icon: '🔒',
+    title: 'Never recorded',
+    copy: 'Calls are peer-to-peer and encrypted end to end. No call is saved. A short buffer is only ever kept when you file a report.',
+    note: 'Encrypted, not stored',
+  },
+  {
+    icon: '🚫',
+    title: 'Bans that stick',
+    copy: 'Device fingerprinting and a tiered ban system, so a banned user cannot be back in the queue five minutes later under a new name.',
+    note: 'Tiered enforcement',
+  },
+  {
+    icon: '🕶',
+    title: 'Anonymous by default',
+    copy: 'A username is all you need. No real name, no phone number, no contact list, and nothing of yours is shared with the person on the other side.',
+    note: 'No personal data exposed',
+  },
 ];
 
 function CandyRain() {
   return (
     <div className="floating-candy" aria-hidden="true">
-      {Array.from({ length: 8 }).map((_, index) => <span key={index} />)}
+      <span className="candy c1">🎥</span>
+      <span className="candy c2">🌐</span>
+      <span className="candy c3">🎧</span>
+      <span className="candy c4">💬</span>
+      <span className="candy c5">🎙</span>
+      <span className="candy c6">◉</span>
     </div>
   );
 }
@@ -76,10 +166,63 @@ function LogoLockup() {
 function ModeToggle({ mode, setMode }: { mode: RoomMode; setMode: (mode: RoomMode) => void }) {
   const isUnmoderated = mode === 'unmoderated';
   return (
-    <button id="mode-toggle" className="mode-toggle" type="button" onClick={() => setMode(isUnmoderated ? 'moderated' : 'unmoderated')}>
-      <span>{isUnmoderated ? 'Unmoderated' : 'Moderated'}</span>
-      <b aria-hidden="true"><i /></b>
+    <button
+      id="mode-toggle"
+      className="mode-toggle"
+      type="button"
+      onClick={() => setMode(isUnmoderated ? 'moderated' : 'unmoderated')}
+      title="Switch mode"
+    >
+      <span>{isUnmoderated ? 'Adult 18+' : 'Standard'}</span>
+      <b aria-hidden="true">
+        <i />
+      </b>
     </button>
+  );
+}
+
+function SafetyToolsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="sf-overlay is-open"
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="sf-panel" role="dialog" aria-modal="true" aria-labelledby="rrSafetyTitle">
+        <div className="sf-head">
+          <div>
+            <h3 id="rrSafetyTitle">Safety tools on every call</h3>
+            <p>
+              These are not policies buried in a terms page. Every one of them is a control sitting
+              under your video for the whole call, and none of them takes more than one tap.
+            </p>
+          </div>
+          <button className="sf-close" type="button" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        <div className="sf-grid">
+          {SAFETY_TOOLS.map((tool) => (
+            <div className="sf-item" key={tool.title}>
+              <i>{tool.icon}</i>
+              <b>{tool.title}</b>
+              <p>{tool.copy}</p>
+              <em>{tool.note}</em>
+            </div>
+          ))}
+        </div>
+
+        <p className="sf-foot">
+          18+ only. Recording, screen-capturing or redistributing any call is prohibited and
+          enforced. This site is RTA-labelled so it can be blocked by parental filtering software.
+          Rizz Roulette LLC operates in line with 18 U.S.C. 2257 record-keeping requirements and
+          processes DMCA notices.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -103,13 +246,13 @@ function SignupPanel({
   inviteError = null,
 }: SignupPanelProps) {
   const [isLogin, setIsLogin] = useState(false);
-  const [screen, setScreen] = useState<'signup' | 'plans' | 'payment' | 'live'>('signup');
-  const [selectedPlan, setSelectedPlan] = useState(plans[1][0]);
+  const [screen, setScreen] = useState<'signup' | 'plans' | 'payment'>('signup');
+  const [selectedPlan, setSelectedPlan] = useState(plans[1].name);
   const [form, setForm] = useState({
     firstName: '',
     email: inviteEmail ?? '',
     password: '',
-    gender: '',
+    gender: 'female',
     interestedIn: 'female',
   });
   const [cardData, setCardData] = useState({
@@ -121,11 +264,14 @@ function SignupPanel({
   const [status, setStatus] = useState(inviteError ?? '');
   const [submitting, setSubmitting] = useState(false);
 
+  const isUnmod = mode === 'unmoderated';
+  const isWoman = form.gender === 'female';
+  const active = modes[mode];
+  const selectedPlanMeta = plans.find((plan) => plan.name === selectedPlan) ?? plans[1];
+
   const handleFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const checked = e.target instanceof HTMLInputElement ? e.target.checked : false;
-    const type = e.target instanceof HTMLInputElement ? e.target.type : '';
-    setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleCardChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -134,7 +280,7 @@ function SignupPanel({
   };
 
   function planToApiId(planName: string) {
-    if (planName === 'Monthly' || planName === 'Weekly Trial') return 'monthly';
+    if (planName === 'Weekly' || planName === 'Monthly') return 'monthly';
     return 'yearly';
   }
 
@@ -146,7 +292,7 @@ function SignupPanel({
         firstName: form.firstName,
         email: form.email,
         password: form.password,
-        gender: form.gender,
+        gender: form.gender === 'other' ? 'male' : form.gender,
         interestedIn: form.interestedIn,
         ...(inviteId ? { inviteId } : {}),
       }),
@@ -186,7 +332,6 @@ function SignupPanel({
       const result = await res.json();
       if (result.success) {
         setToken(result.token);
-        // onRegister bootstraps camera from this user gesture (iOS requirement).
         onRegister?.(result.user, result.token);
       } else if (result.code === 'USER_BANNED') {
         onBanned?.(form.email.trim().toLowerCase());
@@ -201,12 +346,18 @@ function SignupPanel({
   }
 
   async function createAccount() {
-    if (!form.firstName || !form.email || !form.password || !form.gender) {
+    if (!form.firstName.trim()) {
+      setStatus('Please enter a username to continue.');
+      return;
+    }
+    if (!form.email || !form.password || !form.gender) {
       setStatus('Please fill all required fields.');
       return;
     }
     setStatus('');
-    if (mode === 'unmoderated') {
+
+    // Unmoderated men pay; women get VIP free (matches design flow).
+    if (isUnmod && !isWoman && !inviteId) {
       setScreen('plans');
       return;
     }
@@ -223,6 +374,19 @@ function SignupPanel({
   }
 
   async function completePayment() {
+    if (selectedPlanMeta.free) {
+      setSubmitting(true);
+      try {
+        const result = await registerAccount();
+        onRegister?.(result.user, result.token);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : 'Server error');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const { nameOnCard, cardNumber, expiry, cvc } = cardData;
     if (!nameOnCard.trim() || !cardNumber.trim() || !expiry.trim() || !cvc.trim()) {
       setStatus('Please fill in all card details.');
@@ -267,20 +431,12 @@ function SignupPanel({
     }
   }
 
-  if (screen === 'live') {
-    return null;
-  }
-
   return (
     <section className={`flow-backdrop rizz-page ${mode}`}>
-      <div className="flow-panel" role="dialog" aria-modal="true">
+      <div className="flow-panel" role="dialog" aria-modal="true" aria-labelledby="rrFlowTitle">
         <div className="flow-top">
-          <span>
-            {isLogin
-              ? 'User Login'
-              : mode === 'unmoderated'
-                ? 'Unmoderated Mode'
-                : 'Moderated Mode'}
+          <span className="rr-pill">
+            {isLogin ? 'User Login' : active.chip}
           </span>
           <button type="button" onClick={onClose} aria-label="Close">
             <X size={20} />
@@ -289,17 +445,17 @@ function SignupPanel({
 
         {isLogin ? (
           <div className="flow-screen">
-            <h2>Welcome Back</h2>
+            <h2 id="rrFlowTitle">Welcome Back</h2>
             <p>Log in to your account and start matching.</p>
             <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
               <label>
-                Email
+                Email / Mobile
                 <input
                   name="email"
                   value={form.email}
                   onChange={handleFormChange}
-                  type="email"
-                  placeholder="Email"
+                  type="text"
+                  placeholder="For account recovery only"
                 />
               </label>
               <label>
@@ -309,11 +465,11 @@ function SignupPanel({
                   value={form.password}
                   onChange={handleFormChange}
                   type="password"
-                  placeholder="Password"
+                  placeholder="At least 8 characters"
                 />
               </label>
             </div>
-            <p className="flow-status" aria-live="polite">
+            <p className={`flow-status${status ? ' is-visible' : ''}`} aria-live="polite">
               {status}
             </p>
             <div className="flow-actions">
@@ -344,31 +500,32 @@ function SignupPanel({
           <>
             {screen === 'signup' && (
               <div className="flow-screen">
-                <h2>Create Your Rizz Account</h2>
+                <h2 id="rrFlowTitle">Create Your Account</h2>
                 <p>
                   {inviteId
                     ? 'Creator invite — sign up with this email to unlock your VIP badge on video calls. This invite is one-time use.'
-                    : 'Create your account to start matching. Your initial match preference is free — subscribe later if you want to change it.'}
+                    : active.signupCopy}
                 </p>
                 <div className="form-grid">
                   <label className="full">
-                    First Name
+                    Username
                     <input
                       name="firstName"
                       value={form.firstName}
                       onChange={handleFormChange}
                       type="text"
-                      placeholder="Enter username"
+                      maxLength={20}
+                      placeholder="How you will appear in calls"
                     />
                   </label>
                   <label>
-                    Email
+                    Email / Mobile
                     <input
                       name="email"
                       value={form.email}
                       onChange={handleFormChange}
-                      type="email"
-                      placeholder="Email"
+                      type="text"
+                      placeholder="For account recovery only"
                       readOnly={Boolean(inviteEmail)}
                     />
                   </label>
@@ -379,35 +536,19 @@ function SignupPanel({
                       value={form.password}
                       onChange={handleFormChange}
                       type="password"
-                      placeholder="Password"
+                      placeholder="At least 8 characters"
                     />
                   </label>
-                  <label>
-                    Your Gender
-                    <select
-                      name="gender"
-                      value={form.gender}
-                      onChange={handleFormChange}
-                    >
-                      <option value="">Select gender</option>
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
-                    </select>
-                  </label>
-                  <label>
-                    Interested In
-                    <select
-                      name="interestedIn"
-                      value={form.interestedIn}
-                      onChange={handleFormChange}
-                    >
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
-                      <option value="everyone">Everyone</option>
+                  <label className="full">
+                    I am
+                    <select name="gender" value={form.gender} onChange={handleFormChange}>
+                      <option value="female">A woman — VIP is free for you</option>
+                      <option value="male">A man</option>
+                      <option value="other">Prefer not to say</option>
                     </select>
                   </label>
                 </div>
-                <p className="flow-status" aria-live="polite">
+                <p className={`flow-status${status ? ' is-visible' : ''}`} aria-live="polite">
                   {status}
                 </p>
                 <div className="flow-actions">
@@ -417,8 +558,10 @@ function SignupPanel({
                     onClick={() => void createAccount()}
                     disabled={submitting}
                   >
-                    <Sparkles size={18} />{' '}
-                    {submitting ? 'Creating account…' : 'Create Account & Continue'}
+                    {submitting ? 'Creating account…' : 'Verify Age & Continue'}
+                  </button>
+                  <button className="ghost-button" type="button" onClick={onClose}>
+                    Back to Landing
                   </button>
                   <button
                     className="ghost-button"
@@ -428,10 +571,7 @@ function SignupPanel({
                       setIsLogin(true);
                     }}
                   >
-                    <UserRound size={18} /> Already have an account? Log In
-                  </button>
-                  <button className="ghost-button" type="button" onClick={onClose}>
-                    Back to Landing
+                    Already have an account? Log In
                   </button>
                 </div>
               </div>
@@ -439,19 +579,22 @@ function SignupPanel({
 
             {screen === 'plans' && (
               <div className="flow-screen">
-                <h2>Choose Subscription</h2>
-                <p>Unmoderated mode uses the premium payment flow before entry.</p>
-                <div className="plan-grid">
-                  {plans.map(([name, price, detail]) => (
+                <h2>Choose Your Access</h2>
+                <p>
+                  The standard room is always free. The 18+ room needs a subscription for men —
+                  women get full VIP access at no cost, permanently.
+                </p>
+                <div className="plan-grid plan-grid-five">
+                  {plans.map((plan) => (
                     <button
-                      className={selectedPlan === name ? 'selected' : ''}
-                      key={name}
+                      className={`${selectedPlan === plan.name ? 'selected' : ''}${plan.free ? ' plan-free' : ''}`}
+                      key={plan.id}
                       type="button"
-                      onClick={() => setSelectedPlan(name)}
+                      onClick={() => setSelectedPlan(plan.name)}
                     >
-                      <strong>{price}</strong>
-                      <span>{name}</span>
-                      <small>{detail}</small>
+                      <strong>{plan.price}</strong>
+                      <span>{plan.name === 'Women VIP' ? 'Women — free VIP' : plan.name}</span>
+                      <small>{plan.detail}</small>
                     </button>
                   ))}
                 </div>
@@ -461,10 +604,15 @@ function SignupPanel({
                     type="button"
                     onClick={() => {
                       setStatus('');
+                      if (selectedPlanMeta.free) {
+                        void completePayment();
+                        return;
+                      }
                       setScreen('payment');
                     }}
+                    disabled={submitting}
                   >
-                    <Crown size={18} /> Proceed to Payment
+                    {submitting ? 'Continuing…' : 'Continue to Payment'}
                   </button>
                   <button
                     className="ghost-button"
@@ -479,66 +627,69 @@ function SignupPanel({
 
             {screen === 'payment' && (
               <div className="flow-screen payment-screen">
-                <h2>Payment Details</h2>
+                <h2>Payment</h2>
                 <p>
-                  Enter your card details to complete your subscription. Stripe
-                  integration will be added later.
+                  {selectedPlanMeta.free
+                    ? 'Women VIP selected — $0. No card is collected. Continue to enter the 18+ room.'
+                    : `${selectedPlanMeta.name} — ${selectedPlanMeta.price}. Demo checkout; in production this hands off to your live processor.`}
                 </p>
-                <div className="form-grid">
-                  <label className="full">
-                    Name on Card
-                    <input
-                      name="nameOnCard"
-                      value={cardData.nameOnCard}
-                      onChange={handleCardChange}
-                      type="text"
-                      placeholder="Full name"
-                      autoComplete="cc-name"
-                    />
-                  </label>
-                  <label className="full">
-                    Card Number
-                    <input
-                      name="cardNumber"
-                      value={cardData.cardNumber}
-                      onChange={handleCardChange}
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="4242 4242 4242 4242"
-                      autoComplete="cc-number"
-                    />
-                  </label>
-                  <label>
-                    Expiry
-                    <input
-                      name="expiry"
-                      value={cardData.expiry}
-                      onChange={handleCardChange}
-                      type="text"
-                      placeholder="MM/YY"
-                      autoComplete="cc-exp"
-                    />
-                  </label>
-                  <label>
-                    CVC
-                    <input
-                      name="cvc"
-                      value={cardData.cvc}
-                      onChange={handleCardChange}
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="123"
-                      autoComplete="cc-csc"
-                    />
-                  </label>
-                </div>
+                {!selectedPlanMeta.free && (
+                  <div className="form-grid">
+                    <label className="full">
+                      Name on Card
+                      <input
+                        name="nameOnCard"
+                        value={cardData.nameOnCard}
+                        onChange={handleCardChange}
+                        type="text"
+                        placeholder="Full name"
+                        autoComplete="cc-name"
+                      />
+                    </label>
+                    <label className="full">
+                      Card Number
+                      <input
+                        name="cardNumber"
+                        value={cardData.cardNumber}
+                        onChange={handleCardChange}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="4242 4242 4242 4242"
+                        autoComplete="cc-number"
+                      />
+                    </label>
+                    <label>
+                      Expiry
+                      <input
+                        name="expiry"
+                        value={cardData.expiry}
+                        onChange={handleCardChange}
+                        type="text"
+                        placeholder="MM/YY"
+                        autoComplete="cc-exp"
+                      />
+                    </label>
+                    <label>
+                      CVC
+                      <input
+                        name="cvc"
+                        value={cardData.cvc}
+                        onChange={handleCardChange}
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="123"
+                        autoComplete="cc-csc"
+                      />
+                    </label>
+                  </div>
+                )}
                 <div className="receipt">
                   <span>Plan</span>
                   <strong>{selectedPlan}</strong>
                   <span>Status</span>
                   <strong>Ready</strong>
                 </div>
-                <p className="flow-status" aria-live="polite">
+                <p className={`flow-status${status ? ' is-visible' : ''}`} aria-live="polite">
                   {status}
                 </p>
                 <div className="flow-actions">
@@ -548,8 +699,7 @@ function SignupPanel({
                     onClick={() => void completePayment()}
                     disabled={submitting}
                   >
-                    <BadgeCheck size={18} />{' '}
-                    {submitting ? 'Processing…' : 'Subscribe & Continue'}
+                    {submitting ? 'Processing…' : 'Pay & Enter'}
                   </button>
                   <button
                     className="ghost-button"
@@ -581,6 +731,7 @@ export default function LandingPage({ mode, onModeChange, onRegister }: LandingP
   const [searchParams, setSearchParams] = useSearchParams();
   const inviteIdFromUrl = searchParams.get('invite_id');
   const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl));
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
   const [inviteId, setInviteId] = useState<string | null>(inviteIdFromUrl);
   const [inviteEmail, setInviteEmail] = useState<string | null>(null);
@@ -619,6 +770,17 @@ export default function LandingPage({ mode, onModeChange, onRegister }: LandingP
     };
   }, [inviteIdFromUrl]);
 
+  useEffect(() => {
+    if (!safetyOpen && !flowOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (safetyOpen) setSafetyOpen(false);
+      else if (flowOpen) setFlowOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [safetyOpen, flowOpen]);
+
   const handleModeChange = (newMode: RoomMode) => {
     onModeChange(newMode);
   };
@@ -650,63 +812,77 @@ export default function LandingPage({ mode, onModeChange, onRegister }: LandingP
             <span />
             {active.chip}
           </div>
-          <div className="anim-fade-up anim-delay-1"><LogoLockup /></div>
+          <div className="anim-fade-up anim-delay-1">
+            <LogoLockup />
+          </div>
           <ModeToggle mode={mode} setMode={handleModeChange} />
         </header>
 
         <section className="hero-area anim-fade-up anim-delay-2">
           <div className="copy-glass anim-fade-up anim-delay-2">
-            <p className="mini-kicker">{mode === 'moderated' ? 'Candy hearts. Real sparks.' : 'Neon heat. Fast spins.'}</p>
             <h1>{active.title}</h1>
             <p>{active.copy}</p>
-            <div className="hero-actions">
-              <button id="cta-enter" className="hot-button" type="button" onClick={handleEnter}>
-                <Play size={18} /> {active.cta}
-              </button>
-              <button className="soft-link" type="button" onClick={() => handleModeChange(mode === 'moderated' ? 'unmoderated' : 'moderated')}>
-                Switch to {mode === 'moderated' ? 'Unmoderated' : 'Moderated'}
-              </button>
-            </div>
           </div>
         </section>
 
         <footer className="bottom-bar anim-fade-up anim-delay-4">
           <div className="stat-row">
-            <div><strong>{active.online}</strong><span>Online Now</span></div>
-            <div><strong>{active.plan}</strong><span>Room Mood</span></div>
-            <div><strong>{active.speed}</strong><span>Avg Match</span></div>
+            {ALL_STATS.map((stat, index) => (
+              <div key={`${stat.label}-${index}`}>
+                <strong>{stat.value}</strong>
+                <span>{stat.label}</span>
+              </div>
+            ))}
           </div>
+
+          <div className="meta-row">
+            <span className="vip-pill">♛ VIP free for women</span>
+            <span className="safety-pill">🪪 Age verified</span>
+            <span className="safety-pill">🔒 Never recorded</span>
+            <span className="safety-pill">⚑ Report &amp; block</span>
+            <button
+              className="safety-link"
+              type="button"
+              onClick={() => setSafetyOpen(true)}
+            >
+              All safety tools
+            </button>
+          </div>
+
+          <div className="divider" />
+
           <div className="wheel-row">
-            <img src="/assets/landing-bg-4.png" alt="" />
-            <button type="button" onClick={handleEnter}>{active.cta}</button>
-            <img src="/assets/landing-bg-4.png" alt="" />
+            <div className="wheel" aria-hidden="true" />
+            <button className="enter-cta" type="button" onClick={handleEnter}>
+              {active.cta}
+            </button>
+            <div className="wheel" aria-hidden="true" />
           </div>
           <p>{active.warning}</p>
         </footer>
       </section>
 
-      <aside className="feature-strip">
-        <div><ShieldCheck size={18} /><span>Consent-first</span></div>
-        <div><LockKeyhole size={18} /><span>Premium gates</span></div>
-        <div><Star size={18} /><span>Creator hosts</span></div>
-      </aside>
+      {flowOpen &&
+        createPortal(
+          <SignupPanel
+            key={`${inviteId ?? 'no-invite'}-${inviteEmail ?? ''}`}
+            mode={mode}
+            onClose={() => setFlowOpen(false)}
+            onRegister={handleRegister}
+            onBanned={(email) => {
+              setFlowOpen(false);
+              setUnbanEmail(email);
+            }}
+            inviteId={inviteId}
+            inviteEmail={inviteEmail}
+            inviteError={inviteError}
+          />,
+          document.body,
+        )}
 
-      {flowOpen && createPortal(
-        <SignupPanel
-          key={`${inviteId ?? 'no-invite'}-${inviteEmail ?? ''}`}
-          mode={mode}
-          onClose={() => setFlowOpen(false)}
-          onRegister={handleRegister}
-          onBanned={(email) => {
-            setFlowOpen(false);
-            setUnbanEmail(email);
-          }}
-          inviteId={inviteId}
-          inviteEmail={inviteEmail}
-          inviteError={inviteError}
-        />,
-        document.body
-      )}
+      {safetyOpen &&
+        createPortal(<SafetyToolsModal onClose={() => setSafetyOpen(false)} />, document.body)}
+
       {unbanEmail &&
         createPortal(
           <UnbanRequestModal

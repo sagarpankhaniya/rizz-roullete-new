@@ -143,7 +143,7 @@ function AppShell() {
           placeItems: 'center',
           background: '#050505',
           color: '#fff0f7',
-          fontFamily: 'Outfit, sans-serif',
+          fontFamily: 'Poppins, sans-serif',
           fontWeight: 700,
         }}
       >
@@ -162,7 +162,7 @@ function AppShell() {
           padding: '24px',
           background: '#050505',
           color: '#fff0f7',
-          fontFamily: 'Outfit, sans-serif',
+          fontFamily: 'Poppins, sans-serif',
           textAlign: 'center',
         }}
       >

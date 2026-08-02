@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creator Programme — Keep 80% of Tips | Rizz Roulette</title>
+<meta name="description" content="Earn from random video chat with no following required. Creators on Rizz Roulette keep 80% of tips, choose their own room, and get traffic from random matching. 18+.">
+<link rel="canonical" href="https://rizzroulette.chat/creators">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#050006">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+<!-- Adult content labelling. MUST be in the initial HTML response: filtering
+     software and several adult ad networks check for it at crawl time.
+     NOTE: the creator page uses "...-1577-RTA" — the correct, complete label
+     ends "-RTA-HTML". Worth fixing there too. -->
+<meta name="RATING" content="RTA-5042-1996-1400-1577-RTA-HTML">
+<meta name="rating" content="adult">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Rizz Roulette">
+<meta property="og:url" content="https://rizzroulette.chat/creators">
+<meta property="og:title" content="Creator Programme — Keep 80% of Tips | Rizz Roulette">
+<meta property="og:description" content="Earn from random video chat with no following required. Creators on Rizz Roulette keep 80% of tips, choose their own room, and get traffic from random matching. 18+.">
+<meta property="og:image" content="https://rizzroulette.chat/img/og-default.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Creator Programme — Keep 80% of Tips | Rizz Roulette">
+<meta name="twitter:description" content="Earn from random video chat with no following required. Creators on Rizz Roulette keep 80% of tips, choose their own room, and get traffic from random matching. 18+.">
+<meta name="twitter:image" content="https://rizzroulette.chat/img/og-default.jpg">
+
+<!-- hreflang: uncomment per locale as each translation actually ships.
+     Never point hreflang at a page that does not exist yet.
+<link rel="alternate" hreflang="en" href="https://rizzroulette.chat/creators">
+<link rel="alternate" hreflang="pt" href="https://rizzroulette.chat/pt/creators">
+<link rel="alternate" hreflang="es" href="https://rizzroulette.chat/es/creators">
+<link rel="alternate" hreflang="x-default" href="https://rizzroulette.chat/creators">
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap">
+<style>:root{
+  --black:#050006; --panel:#120510; --panel-2:#0A0209;
+  --pink:#FF2D7A; --hot:#FF4D93; --deep:#A1104F; --rose:#FF8FB5;
+  --glow:rgba(255,45,122,.55); --soft:rgba(255,45,122,.12);
+  --white:#FFE9F2; --dim:#C495AB; --line:rgba(255,45,122,.28);
+  --font-display:'Bebas Neue', Impact, sans-serif;
+  --font-body:'Inter', system-ui, sans-serif;
+  --font-accent:'Cormorant Garamond', Georgia, serif;
+  --wrap:1040px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--black);color:var(--white);
+  font-family:var(--font-body);font-size:16.5px;line-height:1.7;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+img,svg{max-width:100%;height:auto;display:block}
+a{color:var(--pink);text-decoration:none}
+a:hover{text-decoration:underline}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--pink);outline-offset:3px}
+
+/* ---- atmosphere (from the reference .smoke / .scan) ---------------------
+   Two blurred radials and a scanline overlay. Four elements, pure CSS, no
+   images — cheap enough to keep on pages that have to load fast.          */
+.smoke{position:fixed;inset:0;pointer-events:none;z-index:0}
+.smoke i{position:absolute;width:60vw;height:60vw;border-radius:50%;filter:blur(90px);display:block}
+.smoke i:nth-child(1){
+  background:radial-gradient(circle,#8E0F49,transparent 65%);
+  top:-18vw;left:-22vw;opacity:.4;animation:d1 14s ease-in-out infinite alternate
+}
+.smoke i:nth-child(2){
+  background:radial-gradient(circle,var(--pink),transparent 65%);
+  bottom:-22vw;right:-22vw;opacity:.22;animation:d2 18s ease-in-out infinite alternate
+}
+@keyframes d1{to{transform:translate(6vw,4vw) scale(1.18)}}
+@keyframes d2{to{transform:translate(-6vw,-5vw) scale(1.12)}}
+.scan{
+  position:fixed;inset:0;pointer-events:none;z-index:2;opacity:.5;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px)
+}
+
+.wrap{position:relative;z-index:3;max-width:var(--wrap);margin:0 auto;padding:0 22px}
+
+/* ---- display type ---- */
+h1,h2,h3{font-family:var(--font-display);font-weight:400;letter-spacing:.02em;line-height:.9}
+h1{
+  font-size:clamp(46px,8.6vw,96px);color:var(--white);margin-left:-3px;
+  text-shadow:0 0 8px rgba(255,255,255,.2),0 0 22px var(--glow),
+              0 0 70px rgba(255,45,122,.5),0 0 120px rgba(255,45,122,.3)
+}
+h2{font-size:clamp(30px,4.6vw,46px);margin:0 0 .5rem;letter-spacing:.05em}
+h3{font-size:clamp(20px,2.4vw,25px);margin:0 0 .4rem;letter-spacing:.07em;color:var(--white)}
+p{margin:0 0 1.1rem}
+
+.eyebrow{
+  font-family:var(--font-display);letter-spacing:.3em;font-size:14px;
+  color:var(--pink);text-shadow:0 0 12px var(--glow);margin-bottom:10px
+}
+.lede{font-size:1.1rem;color:var(--white);opacity:.9;max-width:62ch}
+.small{font-size:12.5px;color:var(--dim)}
+.accent{font-family:var(--font-accent);font-style:italic;font-weight:500;color:var(--rose)}
+
+/* ---- brand lockup (reference .brand / .badge / .wordmark) ---- */
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--white)}
+.brand:hover{text-decoration:none}
+.badge{
+  width:46px;height:46px;border-radius:50%;
+  box-shadow:0 0 18px var(--glow),0 0 44px rgba(255,45,122,.25);
+  transition:transform .6s cubic-bezier(.3,1.6,.4,1)
+}
+.brand:hover .badge{transform:rotate(360deg)}
+.wordmark{font-family:var(--font-display);font-size:27px;letter-spacing:.06em;line-height:1}
+.wordmark span{color:var(--pink);text-shadow:0 0 14px var(--glow)}
+
+/* ---- header ---- */
+header.site{
+  position:sticky;top:0;z-index:6;border-bottom:1px solid var(--line);
+  background:rgba(5,0,6,.85);backdrop-filter:blur(12px)
+}
+.bar{display:flex;align-items:center;gap:20px;padding:14px 0;flex-wrap:wrap}
+.site nav{display:flex;gap:16px;flex-wrap:wrap;margin-left:auto}
+.site nav a{
+  font-family:var(--font-display);font-size:14px;letter-spacing:.16em;color:var(--dim)
+}
+.site nav a:hover{color:var(--pink);text-shadow:0 0 10px var(--glow);text-decoration:none}
+.agegate{
+  font-family:var(--font-display);font-size:13px;letter-spacing:.18em;
+  border:1px solid var(--line);color:var(--pink);padding:5px 11px;border-radius:999px;
+  text-shadow:0 0 10px var(--glow)
+}
+
+/* ---- hero ---- */
+.hero{padding:64px 0 52px}
+.claim{display:flex;align-items:baseline;gap:18px;margin:0 0 1.5rem;flex-wrap:wrap}
+.claim b{
+  font-family:var(--font-display);font-size:clamp(30px,5.4vw,58px);line-height:.92;
+  color:var(--pink);font-weight:400;letter-spacing:.04em;max-width:18ch;
+  text-shadow:0 0 14px var(--glow),0 0 60px rgba(255,45,122,.35)
+}
+.claim em{
+  font-style:normal;font-family:var(--font-display);letter-spacing:.2em;font-size:13px;
+  color:var(--dim);max-width:26ch;line-height:1.5
+}
+.tagline{
+  font-family:var(--font-display);letter-spacing:.24em;font-size:15px;
+  color:var(--pink);text-shadow:0 0 14px var(--glow)
+}
+
+/* ---- buttons (reference .btn-hot / .btn-ghost) ---- */
+.cta{
+  display:inline-block;font-family:var(--font-display);font-size:20px;letter-spacing:.1em;
+  padding:15px 30px;border-radius:6px;border:none;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,var(--hot),var(--deep));color:#fff;
+  box-shadow:0 0 24px var(--glow),0 12px 34px -10px var(--deep);
+  transition:transform .15s,box-shadow .2s
+}
+.cta::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(115deg,transparent 40%,rgba(255,255,255,.35) 50%,transparent 60%);
+  transform:translateX(-120%)
+}
+.cta:hover{transform:translateY(-2px);box-shadow:0 0 44px var(--hot);text-decoration:none}
+.cta:hover::after{transform:translateX(120%);transition:transform .6s}
+.cta:active{transform:scale(.96)}
+.cta.ghost{
+  background:transparent;color:var(--pink);border:1.5px solid var(--pink);
+  text-shadow:0 0 10px var(--glow);box-shadow:none
+}
+.cta.ghost::after{display:none}
+.cta.ghost:hover{background:var(--soft);box-shadow:0 0 22px rgba(255,45,122,.35)}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:28px;margin-bottom:.8rem}
+
+/* ---- signature: the balance bar ---------------------------------------
+   Two opposing weights meeting near centre — the claim as a glyph, with
+   the reference's glow treatment. Recurs as the section divider.       */
+.balancebar{
+  display:flex;height:10px;margin:2.4rem 0;border:1px solid var(--pink);
+  border-radius:999px;overflow:hidden;box-shadow:0 0 18px rgba(255,45,122,.3)
+}
+.balancebar i{display:block;height:100%}
+.balancebar i:first-child{width:52%;background:linear-gradient(90deg,var(--deep),var(--hot))}
+.balancebar i:last-child{
+  width:48%;
+  background:repeating-linear-gradient(90deg,var(--deep) 0 2px,transparent 2px 7px)
+}
+
+/* ---- sections ---- */
+section{padding:52px 0;border-top:1px solid var(--line)}
+section:first-of-type{border-top:0}
+.grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fit,minmax(252px,1fr))}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px;
+  box-shadow:0 0 30px rgba(255,45,122,.08),0 30px 80px -40px #000;transition:all .25s
+}
+.card:hover{border-color:var(--pink);box-shadow:0 0 26px rgba(255,45,122,.22)}
+.card p:last-child{margin-bottom:0}
+.card p{color:var(--white);opacity:.88;font-size:15.5px}
+
+/* ---- comparison table ---- */
+.cmp{width:100%;border-collapse:separate;border-spacing:0;margin:1.4rem 0;font-size:15px}
+.cmp caption{text-align:left;color:var(--dim);font-size:12.5px;padding-bottom:.8rem;line-height:1.6}
+.cmp th,.cmp td{border-bottom:1px solid var(--line);padding:12px 14px;text-align:left;vertical-align:top}
+.cmp thead th{
+  background:var(--panel-2);font-family:var(--font-display);font-size:14px;
+  letter-spacing:.16em;color:var(--dim);border-bottom:1px solid var(--pink)
+}
+.cmp thead th.us{color:var(--pink);text-shadow:0 0 10px var(--glow)}
+.cmp tbody th{font-weight:500;font-family:var(--font-body);color:var(--white);opacity:.85;font-size:14.5px}
+.cmp td.us{color:var(--white);background:var(--soft)}
+.cmp td.them{color:var(--dim)}
+
+/* ---- FAQ ---- */
+.faq{border-top:1px solid var(--line)}
+.faq details{border-bottom:1px solid var(--line)}
+.faq summary{
+  cursor:pointer;padding:18px 0;list-style:none;font-family:var(--font-display);
+  font-size:22px;letter-spacing:.06em;color:var(--white);
+  display:flex;gap:14px;align-items:flex-start
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::before{content:"+";color:var(--pink);text-shadow:0 0 10px var(--glow);flex:0 0 auto}
+.faq details[open] summary{color:var(--pink);text-shadow:0 0 12px var(--glow)}
+.faq details[open] summary::before{content:"–"}
+.faq .a{padding:0 0 20px 26px;max-width:70ch;color:var(--white);opacity:.88;font-size:15.5px}
+.faq .a p:last-child{margin-bottom:0}
+
+/* ---- steps ---- */
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:1.2rem 0}
+ol.steps li{counter-increment:s;padding:0 0 24px 62px;position:relative}
+ol.steps li::before{
+  content:counter(s,decimal-leading-zero);position:absolute;left:0;top:-6px;
+  font-family:var(--font-display);font-size:34px;color:var(--pink);
+  text-shadow:0 0 14px var(--glow)
+}
+ol.steps b{
+  display:block;font-family:var(--font-display);font-size:21px;letter-spacing:.07em;
+  color:var(--white);margin-bottom:2px
+}
+
+/* ---- link matrix (reference .tag pills) ---- */
+.matrix{display:flex;flex-wrap:wrap;gap:10px;margin:1.2rem 0}
+.matrix a{
+  font-family:var(--font-display);letter-spacing:.1em;font-size:14px;
+  border:1px solid var(--line);color:var(--dim);padding:8px 16px;border-radius:999px;
+  transition:all .2s
+}
+.matrix a:hover{
+  color:var(--pink);border-color:var(--pink);box-shadow:0 0 16px rgba(255,45,122,.3);
+  text-shadow:0 0 8px var(--glow);transform:translateY(-2px);text-decoration:none
+}
+
+/* ---- footer ---- */
+footer.site{
+  position:relative;z-index:3;border-top:1px solid var(--line);
+  padding:34px 0 48px;color:var(--dim);font-size:14px
+}
+footer.site .lockup{margin-bottom:26px}
+footer.site .cols{display:grid;gap:26px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:28px}
+footer.site h4{
+  font-family:var(--font-display);font-size:14px;letter-spacing:.22em;
+  color:var(--pink);text-shadow:0 0 10px var(--glow);margin-bottom:.8rem
+}
+footer.site ul{list-style:none}
+footer.site li{margin-bottom:.5rem}
+footer.site a{color:var(--dim)}
+footer.site a:hover{color:var(--pink);text-shadow:0 0 8px var(--glow)}
+.legal{border-top:1px solid var(--line);padding-top:20px;font-size:12.5px;line-height:1.75}
+
+@media (max-width:640px){
+  .hero{padding:44px 0 38px}
+  section{padding:40px 0}
+  .cmp{font-size:13.5px}
+  .cmp th,.cmp td{padding:10px}
+  .wordmark{font-size:23px}
+  .badge{width:40px;height:40px}
+}
+/* Reference honours this; so do we. */
+@media (prefers-reduced-motion:reduce){
+  .smoke i,.badge,.cta::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+  *{animation:none!important}
+}</style>
+<script type="application/ld+json">{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "Organization",
+   "@id": "https://rizzroulette.chat/#org",
+   "name": "Rizz Roulette",
+   "legalName": "Rizz Roulette LLC",
+   "url": "https://rizzroulette.chat/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://rizzroulette.chat/img/logo.png",
+    "width": 420,
+    "height": 420
+   },
+   "email": "support@rizzroulette.chat",
+   "foundingDate": "2026-06-03",
+   "address": {
+    "@type": "PostalAddress",
+    "addressRegion": "WY",
+    "addressCountry": "US"
+   },
+   "sameAs": []
+  },
+  {
+   "@type": "WebSite",
+   "@id": "https://rizzroulette.chat/#site",
+   "url": "https://rizzroulette.chat/",
+   "name": "Rizz Roulette",
+   "inLanguage": "en",
+   "publisher": {
+    "@id": "https://rizzroulette.chat/#org"
+   }
+  },
+  {
+   "@type": "FAQPage",
+   "@id": "https://rizzroulette.chat/creators#faq",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "How much do creators keep?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "80% of every tip. The remaining 20% covers processing, payouts and platform costs."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Do I need a following to join?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. Matching is random, so traffic does not depend on an audience you bring with you. This is the main structural difference from subscription platforms, where earnings track the following you already had."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "How do payouts work?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Payouts run to a supported payment provider on a regular schedule. Requirements including age and identity verification apply before the first payout."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Do I have to appear in the unmoderated room?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. You choose your room, and the moderated room has a clothed, no-explicit-content policy. Tipping works in both."
+     }
+    }
+   ]
+  },
+  {
+   "@type": "WebPage",
+   "@id": "https://rizzroulette.chat/creators#page",
+   "url": "https://rizzroulette.chat/creators",
+   "name": "Creator Programme — Keep 80% of Tips | Rizz Roulette",
+   "description": "Earn from random video chat with no following required. Creators on Rizz Roulette keep 80% of tips, choose their own room, and get traffic from random matching. 18+.",
+   "isPartOf": {
+    "@id": "https://rizzroulette.chat/#site"
+   },
+   "about": {
+    "@id": "https://rizzroulette.chat/#org"
+   },
+   "inLanguage": "en",
+   "speakable": {
+    "@type": "SpeakableSpecification",
+    "cssSelector": [
+     "h1",
+     ".lede"
+    ]
+   }
+  }
+ ]
+}</script>
+</head>
+<body>
+<div class="smoke" aria-hidden="true"><i></i><i></i></div>
+<div class="scan" aria-hidden="true"></div>
+<header class="site"><div class="wrap"><div class="bar">
+<a class="brand" href="/" aria-label="Rizz Roulette home">
+  <img class="badge" src="/img/logo-96.png" width="46" height="46"
+       style="width:46px;height:46px"
+       alt="Rizz Roulette logo — adult random video chat" decoding="async">
+  <span class="wordmark">RIZZ<span>ROULETTE</span></span>
+</a>
+<span class="agegate">18+</span>
+<nav aria-label="Main">
+  <a href="/how-it-works">How it works</a>
+  <a href="/alternative">Compare</a>
+  <a href="/creators">Creators</a>
+  <a href="/safety">Safety</a>
+  <a href="/faq">FAQ</a>
+</nav>
+</div></div></header>
+<main>
+
+<section class="hero"><div class="wrap">
+<p class="eyebrow">Creator programme</p>
+<h1>You keep 80%. No following required.</h1>
+<p class="lede">On subscription platforms your income tracks the audience you arrived with. Rizz
+Roulette matches randomly, so traffic does not depend on a following — which is why creators
+without one can earn here from day one.</p>
+<div class="cta-row"><a class="cta" href="/creators/apply">Apply to the programme</a></div>
+<div class="balancebar" role="presentation" aria-hidden="true"><i></i><i></i></div>
+</div></section>
+
+<section><div class="wrap">
+<h2>How it works for you</h2>
+<div class="grid">
+  <div class="card"><h3>80/20 in your favour</h3><p>You keep 80% of every tip. The rest covers
+  processing, payouts and platform costs.</p></div>
+  <div class="card"><h3>Traffic without an audience</h3><p>Matching is random and the queue is
+  deliberately balanced, which means the demand side is there before you are.</p></div>
+  <div class="card"><h3>You pick the room</h3><p>Moderated with a clothed policy, or adults-only.
+  Tipping works in both.</p></div>
+  <div class="card"><h3>You are the reason the ratio holds</h3><p>Being blunt about the deal:
+  the industry-best ratio is our product, and paying creators properly is how we keep it. Your
+  presence is the mechanism, not a nice-to-have.</p></div>
+</div>
+
+<h2>How this differs from subscription platforms</h2>
+<p>On a subscription platform your income is a function of the audience you brought with you.
+Building that audience is most of the work, it happens off-platform, and it is why the earnings
+distribution on those sites is so lopsided — the people at the top arrived with a following and the
+people at the bottom are still trying to build one. If you are in the second group, working harder
+inside the platform does not fix it, because the constraint is external.</p>
+<p>Random matching removes that constraint entirely. You are not competing for a place in anyone's
+feed and you are not ranked against creators with a five-year head start. Every session puts you in
+front of people who did not come looking for you specifically, which means discovery is the
+platform's job rather than yours.</p>
+<p>The trade-off is real and worth stating: earnings here are per-session rather than recurring, so
+there is no monthly subscription base to rely on. Some creators run both — subscriptions for
+recurring income, random chat for reach and for the days the feed is quiet.</p>
+
+<h2>What we ask of you</h2>
+<p>Age and identity verification before your first payout, without exception. No content involving
+anyone under 18, ever, and no exceptions or appeals on that. No recording or sharing another user's
+stream without their consent. Beyond that, you set your own room, your own hours and your own
+boundaries, and you can end any session at any time without explaining why.</p>
+<div class="balancebar" role="presentation" aria-hidden="true"><i></i><i></i></div>
+<h2>Questions</h2>
+<div class="faq">
+<details>
+  <summary>How much do creators keep?</summary>
+  <div class="a"><p>80% of every tip. The remaining 20% covers processing, payouts and platform costs.</p></div>
+</details>
+<details>
+  <summary>Do I need a following to join?</summary>
+  <div class="a"><p>No. Matching is random, so traffic does not depend on an audience you bring with you. This is the main structural difference from subscription platforms, where earnings track the following you already had.</p></div>
+</details>
+<details>
+  <summary>How do payouts work?</summary>
+  <div class="a"><p>Payouts run to a supported payment provider on a regular schedule. Requirements including age and identity verification apply before the first payout.</p></div>
+</details>
+<details>
+  <summary>Do I have to appear in the unmoderated room?</summary>
+  <div class="a"><p>No. You choose your room, and the moderated room has a clothed, no-explicit-content policy. Tipping works in both.</p></div>
+</details>
+</div>
+</div></section>
+</main>
+<footer class="site"><div class="wrap">
+<div class="lockup"><a class="brand" href="/" aria-label="Rizz Roulette home">
+  <img class="badge" src="/img/logo-96.png" width="38" height="38"
+       style="width:38px;height:38px"
+       alt="Rizz Roulette logo — adult random video chat" decoding="async">
+  <span class="wordmark">RIZZ<span>ROULETTE</span></span>
+</a></div>
+<div class="cols">
+<div><h4>Product</h4><ul>
+<li><a href="/how-it-works">How it works</a></li>
+<li><a href="/faq">Questions</a></li>
+<li><a href="/creators">Creator program</a></li>
+</ul></div>
+<div><h4>Compare</h4><ul>
+<li><a href="/alternative">All comparisons</a></li>
+<li><a href="/alternative/flingster">vs Flingster</a></li>
+<li><a href="/alternative/chatroulette">vs Chatroulette</a></li>
+<li><a href="/alternative/omegle">Omegle replacement</a></li>
+</ul></div>
+<div><h4>Trust</h4><ul>
+<li><a href="/safety">Safety &amp; moderation</a></li>
+<li><a href="/about">About us</a></li>
+<li><a href="/2257">18 U.S.C. 2257</a></li>
+<li><a href="/dmca">DMCA</a></li>
+</ul></div>
+<div><h4>Legal</h4><ul>
+<li><a href="/terms">Terms</a></li>
+<li><a href="/privacy">Privacy</a></li>
+<li><a href="mailto:support@rizzroulette.chat">support@rizzroulette.chat</a></li>
+</ul></div>
+</div>
+<div class="legal">
+<p>Rizz Roulette LLC, Wyoming, United States. Adults only — you must be 18 or older to use this
+service. All performers and users are verified as 18 or over. Records required by
+18 U.S.C. 2257 are held by the custodian named on our
+<a href="/2257">2257 compliance page</a>.</p>
+<p>&copy; 2026 Rizz Roulette LLC. Labelled with RTA. All rights reserved.</p>
+</div>
+</div></footer>
+</body>
+</html>
