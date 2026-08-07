@@ -12,10 +12,11 @@ import Reports from "./pages/Reports";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import { GuestRoute, ProtectedRoute } from "./components/auth/RouteGuards";
+import { APP_BASE } from "./lib/base";
 
 export default function App() {
   return (
-    <Router basename="/admin">
+    <Router basename={APP_BASE || undefined}>
       <ScrollToTop />
       <Routes>
         <Route element={<ProtectedRoute />}>

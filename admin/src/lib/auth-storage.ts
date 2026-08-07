@@ -1,6 +1,7 @@
 import { withBase } from "./base";
 
-const TOKEN_KEY = "admin_token";
+const TOKEN_KEY = "rizz-admin-token";
+const LEGACY_TOKEN_KEY = "admin_token";
 const ADMIN_KEY = "admin_user";
 const REMEMBER_KEY = "admin_remember";
 
@@ -17,7 +18,12 @@ function storageForRemember(remember: boolean): Storage {
 }
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
+  return (
+    localStorage.getItem(TOKEN_KEY) ??
+    sessionStorage.getItem(TOKEN_KEY) ??
+    localStorage.getItem(LEGACY_TOKEN_KEY) ??
+    sessionStorage.getItem(LEGACY_TOKEN_KEY)
+  );
 }
 
 export function getStoredAdmin(): AdminProfile | null {
@@ -51,10 +57,12 @@ export function setStoredAdmin(admin: AdminProfile) {
 }
 
 export function clearAuthSession() {
-  localStorage.removeItem(TOKEN_KEY);
+  for (const key of [TOKEN_KEY, LEGACY_TOKEN_KEY]) {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  }
   localStorage.removeItem(ADMIN_KEY);
   localStorage.removeItem(REMEMBER_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(ADMIN_KEY);
 }
 

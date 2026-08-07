@@ -13,7 +13,6 @@ import {
   type LoginResponse,
 } from "../api/auth";
 import {
-  clearAuthSession,
   forceLogoutToLogin,
   getStoredAdmin,
   getToken,
@@ -80,9 +79,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
-    clearAuthSession();
-    setToken(null);
-    setAdmin(null);
     queryClient.clear();
     forceLogoutToLogin();
   }, [queryClient]);
