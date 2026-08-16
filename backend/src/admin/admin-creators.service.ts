@@ -40,6 +40,8 @@ export class AdminCreatorsService {
       isBanned: Boolean(user.isBanned),
       banReason: user.banReason ?? null,
       bannedAt: user.bannedAt ?? null,
+      creatorEarnings: user.creatorEarnings ?? 0,
+      walletCoins: user.coins ?? 0,
       createdAt: timestamps.createdAt ?? null,
     };
   }

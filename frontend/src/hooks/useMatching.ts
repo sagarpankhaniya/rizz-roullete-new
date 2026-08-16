@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getSocket } from '../services/socket';
 import { getStoredUser } from '../utils/user';
+import { getCreatorId } from '../services/creators';
 import {
   SOCKET_EVENTS,
   type CallPhase,
@@ -80,19 +81,36 @@ export function useMatching(identity?: string) {
 
   const startCall = useCallback(() => {
     const socket = socketRef.current ?? getSocket();
+
+    const emitStart = () => {
+      setPhase('connecting');
+      setStatusMessage('Joining waiting queue…');
+      setMatch(null);
+
+      const stored = getStoredUser();
+      const name = identityRef.current?.trim() || stored?.firstName?.trim();
+      const payload: StartCallPayload = {};
+      if (name) payload.identity = name;
+      if (stored?.gender) payload.gender = stored.gender;
+      if (stored?.interestedIn) payload.interestedIn = stored.interestedIn;
+
+      const targetCreatorUserId = getCreatorId();
+      if (targetCreatorUserId) {
+        payload.targetCreatorUserId = targetCreatorUserId;
+      }
+
+      socket.emit(SOCKET_EVENTS.START_CALL, payload);
+    };
+
+    if (socket.connected) {
+      emitStart();
+      return;
+    }
+
     setPhase('connecting');
-    setStatusMessage('Joining waiting queue…');
-    setMatch(null);
-
-    const stored = getStoredUser();
-    const name = identityRef.current?.trim() || stored?.firstName?.trim();
-    const payload: StartCallPayload = {};
-    if (name) payload.identity = name;
-    // Fallback if JWT handshake did not resolve prefs
-    if (stored?.gender) payload.gender = stored.gender;
-    if (stored?.interestedIn) payload.interestedIn = stored.interestedIn;
-
-    socket.emit(SOCKET_EVENTS.START_CALL, payload);
+    setStatusMessage('Connecting to server…');
+    socket.connect();
+    socket.once('connect', emitStart);
   }, []);
 
   const leaveCall = useCallback(() => {

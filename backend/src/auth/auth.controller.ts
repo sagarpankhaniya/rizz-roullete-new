@@ -37,13 +37,11 @@ export class AuthController {
   @Post('register')
   async register(@Body() body: RegisterDto, @Req() req: Request) {
     const gender = normalizeGender(body.gender);
-    const interestedIn = normalizeInterestedIn(body.interestedIn);
+    const interestedIn =
+      normalizeInterestedIn(body.interestedIn) ?? 'everyone';
 
     if (!gender) {
       throw new BadRequestException('Gender is required.');
-    }
-    if (!interestedIn) {
-      throw new BadRequestException('Invalid match preference.');
     }
 
     const existing = await this.usersService.findByEmail(body.email);

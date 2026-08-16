@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Link, useLocation } from "react-router";
-import { GridIcon, GroupIcon, BoxIcon, ListIcon } from "../icons";
+import { GridIcon, GroupIcon, BoxIcon, ListIcon, TableIcon, EnvelopeIcon } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import { assetUrl } from "../lib/base";
 
@@ -30,6 +30,16 @@ const navItems: NavItem[] = [
     icon: <ListIcon />,
     name: "Reports",
     path: "/reports",
+  },
+  {
+    icon: <TableIcon />,
+    name: "Purchases & Tips",
+    path: "/coins",
+  },
+  {
+    icon: <EnvelopeIcon />,
+    name: "Chat logs",
+    path: "/chat",
   },
 ];
 

@@ -48,13 +48,18 @@ export class ProfileController {
     }
 
     const currentPref = normalizeInterestedIn(currentUser.interestedIn);
-    if (currentPref && currentPref !== interestedIn) {
-      if (!currentUser.isSubscribed) {
-        throw new ForbiddenException({
-          error: 'Subscription required to change match preference.',
-          code: 'SUBSCRIPTION_REQUIRED',
-        });
-      }
+    const narrowingToSpecificGender =
+      interestedIn !== 'everyone' && interestedIn !== 'couple' && interestedIn !== 'other';
+    if (
+      currentPref &&
+      currentPref !== interestedIn &&
+      narrowingToSpecificGender &&
+      !currentUser.isSubscribed
+    ) {
+      throw new ForbiddenException({
+        error: 'Subscription required to change match preference.',
+        code: 'SUBSCRIPTION_REQUIRED',
+      });
     }
 
     if (!currentUser.gender) {

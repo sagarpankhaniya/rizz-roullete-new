@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import PageMeta from "../components/common/PageMeta";
 import Badge from "../components/ui/badge/Badge";
 import { getCreator } from "../api/creators";
+import { getCreatorCoinEarnings } from "../api/coins";
 import { getApiErrorMessage } from "../api/auth";
 import { formatDateTime } from "../lib/format";
 
@@ -43,6 +44,12 @@ export default function CreatorView() {
 
   const creator = query.data;
   const user = creator?.user;
+
+  const earningsQuery = useQuery({
+    queryKey: ["admin", "coins", "creator-earnings", user?.id],
+    queryFn: () => getCreatorCoinEarnings(user!.id),
+    enabled: Boolean(user?.id && user.isVip),
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -193,6 +200,14 @@ export default function CreatorView() {
                 />
                 <DetailItem label="VIP" value={user.isVip ? "Yes" : "No"} />
                 <DetailItem
+                  label="Creator earnings"
+                  value={(user.creatorEarnings ?? 0).toLocaleString()}
+                />
+                <DetailItem
+                  label="Wallet coins"
+                  value={(user.walletCoins ?? 0).toLocaleString()}
+                />
+                <DetailItem
                   label="Registration IP"
                   value={display(user.registrationIp)}
                 />
@@ -229,6 +244,71 @@ export default function CreatorView() {
               </p>
             )}
           </div>
+
+          {user?.isVip && earningsQuery.data && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-white/[0.05] dark:bg-white/[0.03] md:p-6">
+              <h4 className="mb-4 text-sm font-semibold text-gray-800 dark:text-white/90">
+                Coin earnings (payout basis)
+              </h4>
+              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Lifetime total
+                  </p>
+                  <p className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+                    {earningsQuery.data.totalEarnings.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    From tips
+                  </p>
+                  <p className="text-xl font-semibold text-success-600 dark:text-success-400">
+                    {earningsQuery.data.tipsTotal.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    From room entry
+                  </p>
+                  <p className="text-xl font-semibold text-warning-600 dark:text-warning-400">
+                    {earningsQuery.data.entryTotal.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+              {earningsQuery.data.recent.length > 0 && (
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Recent transactions
+                  </p>
+                  <ul className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                    {earningsQuery.data.recent.map((tx) => (
+                      <li
+                        key={tx.id}
+                        className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                      >
+                        <span>
+                          <Badge size="sm" color="light">
+                            {tx.type === "entry_fee" ? "Entry" : "Tip"}
+                          </Badge>{" "}
+                          {tx.user?.firstName || "Fan"} ·{" "}
+                          {formatDateTime(tx.createdAt)}
+                        </span>
+                        <span className="font-medium text-success-600 dark:text-success-400">
+                          +{tx.creatorAmount.toLocaleString()} coins
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                <Link to="/coins" className="text-brand-500 hover:underline">
+                  View purchases &amp; tips ledger →
+                </Link>
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

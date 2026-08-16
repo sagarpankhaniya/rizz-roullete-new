@@ -30,6 +30,8 @@ export interface StartCallPayload {
   /** Fallback if socket JWT auth is missing */
   gender?: string;
   interestedIn?: string;
+  /** Mongo user id when entering a specific creator's room */
+  targetCreatorUserId?: string;
 }
 
 export interface SendChatPayload {
@@ -44,12 +46,19 @@ export interface ChatMessagePayload {
 
 export interface SendTipPayload {
   amount: string;
+  menuItem?: string;
 }
 
 export interface TipReceivedPayload {
   amount: string;
+  creatorReceived?: string;
   fromIdentity: string;
   sentAt: number;
+}
+
+export interface CreatorFanWaitingPayload {
+  fanIdentity: string;
+  message: string;
 }
 
 export const SOCKET_EVENTS = {
@@ -62,6 +71,8 @@ export const SOCKET_EVENTS = {
   PARTNER_LEFT: 'partner_left',
   CHAT_MESSAGE: 'chat_message',
   TIP_RECEIVED: 'tip_received',
+  /** Server → creator: a paid fan is waiting to enter their room */
+  CREATOR_FAN_WAITING: 'creator_fan_waiting',
   ERROR: 'error',
 } as const;
 

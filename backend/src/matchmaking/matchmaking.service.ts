@@ -24,6 +24,8 @@ export interface ActiveCall {
   socketB: string;
   identityA: string;
   identityB: string;
+  userIdA?: string;
+  userIdB?: string;
 }
 
 export interface MatchResult {
@@ -38,6 +40,7 @@ export interface EnqueueInput {
   interestedIn: MatchPrefs['interestedIn'];
   isVip?: boolean;
   userId?: string;
+  targetCreatorUserId?: string;
 }
 
 /**
@@ -209,10 +212,18 @@ export class MatchmakingService {
     const userKey = this.redis.key(RedisKeys.waitingUser(socketId));
     const data = await client.hgetall(userKey);
     const bucket = data?.bucket;
+    const targetCreator = data?.targetCreatorUserId;
 
     const pipeline = client.pipeline();
     if (bucket) {
       pipeline.lrem(this.redis.key(RedisKeys.waitingBucket(bucket)), 0, socketId);
+    }
+    if (targetCreator) {
+      pipeline.lrem(
+        this.redis.key(RedisKeys.creatorWaitQueue(targetCreator)),
+        0,
+        socketId,
+      );
     }
     // Legacy blind FIFO cleanup
     pipeline.lrem(this.redis.key(RedisKeys.waitingQueue()), 0, socketId);
@@ -226,6 +237,196 @@ export class MatchmakingService {
    * Mark online + enqueue into a gender/preference bucket, or match immediately.
    */
   async enqueueOrMatch(input: EnqueueInput): Promise<MatchResult> {
+    const {
+      socketId,
+      identity,
+      gender,
+      interestedIn,
+      isVip = false,
+      userId = '',
+      targetCreatorUserId = '',
+    } = input;
+
+    if (targetCreatorUserId) {
+      return this.enqueueCreatorFan({
+        socketId,
+        identity,
+        gender,
+        interestedIn,
+        isVip,
+        userId,
+        targetCreatorUserId,
+      });
+    }
+
+    if (isVip && userId) {
+      const fanMatch = await this.tryMatchWaitingFan(userId, input);
+      if (fanMatch) {
+        return fanMatch;
+      }
+    }
+
+    return this.enqueueRandomMatch(input);
+  }
+
+  /**
+   * Fan paid to enter a specific creator's room — wait in creator queue or match
+   * immediately if that creator is already waiting.
+   */
+  private async enqueueCreatorFan(
+    input: EnqueueInput & { targetCreatorUserId: string },
+  ): Promise<MatchResult> {
+    const {
+      socketId,
+      identity,
+      gender,
+      interestedIn,
+      isVip = false,
+      userId = '',
+      targetCreatorUserId,
+    } = input;
+
+    if (await this.isWaiting(socketId)) {
+      this.logger.warn(`Ignoring duplicate creator enqueue for ${socketId}`);
+      return { status: 'waiting' };
+    }
+
+    if (await this.isInCall(socketId)) {
+      await this.handleDisconnect(socketId, 'requeue');
+    }
+
+    const creatorSocketId =
+      await this.presence.getSocketForUser(targetCreatorUserId);
+    if (creatorSocketId && creatorSocketId !== socketId) {
+      const creatorWaiting = await this.isWaiting(creatorSocketId);
+      const creatorInCall = await this.isInCall(creatorSocketId);
+      if (creatorWaiting && !creatorInCall) {
+        const creatorMeta = await this.loadWaitingUser(creatorSocketId);
+        if (creatorMeta) {
+          await this.removeFromQueue(creatorSocketId);
+          const fanUser: WaitingUser = {
+            socketId,
+            identity,
+            gender,
+            interestedIn,
+            bucket: ownBucket({ gender, interestedIn }),
+            joinedAt: new Date(),
+            isVip,
+            userId: userId || undefined,
+            targetCreatorUserId,
+          };
+          try {
+            const matches = await this.createMatch(creatorMeta, fanUser);
+            return { status: 'matched', matches };
+          } catch (error) {
+            await this.requeueUser(creatorMeta);
+            this.logger.error(
+              `Creator fan match failed for ${identity}`,
+              (error as Error).stack,
+            );
+            throw error;
+          }
+        }
+      }
+    }
+
+    await this.presence.updateIdentity(socketId, identity);
+    await this.presence.setStatus(socketId, 'waiting');
+
+    const bucket = ownBucket({ gender, interestedIn });
+    const waitingKey = this.redis.key(RedisKeys.waitingUser(socketId));
+    const joinedAt = new Date().toISOString();
+    await this.redis.getClient().hset(waitingKey, {
+      socketId,
+      identity,
+      gender,
+      interestedIn,
+      bucket,
+      joinedAt,
+      isVip: isVip ? '1' : '0',
+      userId: userId || '',
+      targetCreatorUserId,
+    });
+
+    const creatorQueueKey = this.redis.key(
+      RedisKeys.creatorWaitQueue(targetCreatorUserId),
+    );
+    await this.redis.getClient().rpush(creatorQueueKey, socketId);
+
+    this.logger.log(
+      `Fan ${identity} waiting for creator ${targetCreatorUserId}`,
+    );
+    return { status: 'waiting' };
+  }
+
+  /** Creator goes live — pair with the next fan waiting for this room. */
+  private async tryMatchWaitingFan(
+    creatorUserId: string,
+    creatorInput: EnqueueInput,
+  ): Promise<MatchResult | null> {
+    const queueKey = this.redis.key(RedisKeys.creatorWaitQueue(creatorUserId));
+    const client = this.redis.getClient();
+    const queueLen = await client.llen(queueKey);
+    if (queueLen === 0) {
+      return null;
+    }
+
+    let fanMeta: WaitingUser | null = null;
+    for (let i = 0; i < queueLen; i++) {
+      const fanSocketId = await client.lpop(queueKey);
+      if (!fanSocketId) break;
+      if (fanSocketId === creatorInput.socketId) continue;
+
+      const meta = await this.loadWaitingUser(fanSocketId);
+      const online = await this.presence.isOnline(fanSocketId);
+      const alive = this.isSocketConnected(fanSocketId);
+      if (
+        meta &&
+        online &&
+        alive &&
+        meta.targetCreatorUserId === creatorUserId
+      ) {
+        fanMeta = meta;
+        break;
+      }
+      await this.removeFromQueue(fanSocketId);
+    }
+
+    if (!fanMeta) {
+      return null;
+    }
+
+    await this.removeFromQueue(fanMeta.socketId);
+
+    const creatorUser: WaitingUser = {
+      socketId: creatorInput.socketId,
+      identity: creatorInput.identity,
+      gender: creatorInput.gender,
+      interestedIn: creatorInput.interestedIn,
+      bucket: ownBucket({
+        gender: creatorInput.gender,
+        interestedIn: creatorInput.interestedIn,
+      }),
+      joinedAt: new Date(),
+      isVip: creatorInput.isVip,
+      userId: creatorInput.userId,
+    };
+
+    try {
+      const matches = await this.createMatch(fanMeta, creatorUser);
+      return { status: 'matched', matches };
+    } catch (error) {
+      await this.requeueUser(fanMeta);
+      this.logger.error(
+        `Creator ↔ fan match failed for ${creatorInput.identity}`,
+        (error as Error).stack,
+      );
+      throw error;
+    }
+  }
+
+  /** Standard random preference-bucket matching. */
+  private async enqueueRandomMatch(input: EnqueueInput): Promise<MatchResult> {
     const {
       socketId,
       identity,
@@ -438,6 +639,7 @@ export class MatchmakingService {
       joinedAt: data.joinedAt ? new Date(data.joinedAt) : new Date(),
       isVip: data.isVip === '1' || data.isVip === 'true',
       userId: data.userId || undefined,
+      targetCreatorUserId: data.targetCreatorUserId || undefined,
     };
   }
 
@@ -457,6 +659,7 @@ export class MatchmakingService {
       joinedAt: user.joinedAt.toISOString(),
       isVip: user.isVip ? '1' : '0',
       userId: user.userId || '',
+      targetCreatorUserId: user.targetCreatorUserId || '',
     });
     await client.rpush(queueKey, user.socketId);
     await this.presence.setStatus(user.socketId, 'waiting');
@@ -483,6 +686,8 @@ export class MatchmakingService {
       socketB: userB.socketId,
       identityA: userA.identity,
       identityB: userB.identity,
+      userIdA: userA.userId || '',
+      userIdB: userB.userId || '',
     };
 
     await this.storeActiveCall(call);

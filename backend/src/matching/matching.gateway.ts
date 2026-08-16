@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -21,6 +21,8 @@ import { UsersService } from '../users/users.service';
 import { PreferenceQueueService } from '../profile/preference-queue.service';
 import { GenderVerificationService } from '../gender-verification/gender-verification.service';
 import { AgeVerificationService } from '../age-verification/age-verification.service';
+import { CoinsService } from '../coins/coins.service';
+import { ChatArchiveService } from '../chat/chat-archive.service';
 import {
   ChatMessagePayload,
   PartnerLeftPayload,
@@ -72,6 +74,8 @@ export class MatchingGateway
     private readonly preferenceQueue: PreferenceQueueService,
     private readonly genderVerification: GenderVerificationService,
     private readonly ageVerification: AgeVerificationService,
+    private readonly coinsService: CoinsService,
+    private readonly chatArchive: ChatArchiveService,
   ) {}
 
   afterInit(server: Server) {
@@ -100,6 +104,7 @@ export class MatchingGateway
       if (user) {
         client.data.user = user;
         await this.presence.updateIdentity(client.id, user.identity);
+        await this.presence.setUserSocket(user.userId, client.id);
         this.logger.log(
           `Socket connected: ${client.id} user=${user.userId} (${user.gender}→${user.interestedIn})`,
         );
@@ -117,6 +122,10 @@ export class MatchingGateway
   async handleDisconnect(client: Socket) {
     this.logger.log(`Socket disconnected: ${client.id}`);
     try {
+      const user = client.data.user as SocketUser | undefined;
+      if (user?.userId) {
+        await this.presence.clearUserSocket(user.userId);
+      }
       await this.notifyPartnerLeft(client.id, 'partner_disconnected');
       await this.presence.setOffline(client.id);
     } catch (error) {
@@ -189,6 +198,11 @@ export class MatchingGateway
       const userId =
         (client.data.user as SocketUser | undefined)?.userId || '';
 
+      const targetCreatorUserId =
+        typeof body?.targetCreatorUserId === 'string'
+          ? body.targetCreatorUserId.trim()
+          : '';
+
       const result = await this.matchmaking.enqueueOrMatch({
         socketId: client.id,
         identity,
@@ -196,12 +210,28 @@ export class MatchingGateway
         interestedIn: prefs.interestedIn,
         isVip,
         userId,
+        targetCreatorUserId: targetCreatorUserId || undefined,
       });
 
       if (result.status === 'waiting') {
-        client.emit(SOCKET_EVENTS.WAITING, {
-          message: 'Waiting for a matching user…',
-        });
+        const waitingMessage = targetCreatorUserId
+          ? 'Waiting for the creator to join their room…'
+          : 'Waiting for a matching user…';
+        client.emit(SOCKET_EVENTS.WAITING, { message: waitingMessage });
+
+        if (targetCreatorUserId) {
+          const creatorSocketId =
+            await this.presence.getSocketForUser(targetCreatorUserId);
+          if (creatorSocketId) {
+            this.server.to(creatorSocketId).emit(
+              SOCKET_EVENTS.CREATOR_FAN_WAITING,
+              {
+                fanIdentity: identity,
+                message: `${identity} paid to enter your room — open Match and go live to connect.`,
+              },
+            );
+          }
+        }
         return;
       }
 
@@ -234,7 +264,7 @@ export class MatchingGateway
   async onLeaveCall(@ConnectedSocket() client: Socket) {
     try {
       await this.notifyPartnerLeft(client.id, 'partner_left');
-      // Stay online so the user can rejoin the queue without refreshing
+      await this.matchmaking.removeFromQueue(client.id);
       await this.presence.setStatus(client.id, 'online');
       return { ok: true };
     } catch (error) {
@@ -249,7 +279,7 @@ export class MatchingGateway
     }
   }
 
-  /** Ephemeral in-call chat — relay only, never persisted. */
+  /** Ephemeral in-call chat — relay to partner; archival is async via Redis queue. */
   @SubscribeMessage(SOCKET_EVENTS.SEND_CHAT)
   async onSendChat(
     @ConnectedSocket() client: Socket,
@@ -269,18 +299,32 @@ export class MatchingGateway
         return { ok: false };
       }
 
-      const partnerSocketId =
-        call.socketA === client.id ? call.socketB : call.socketA;
-      const fromIdentity =
-        call.socketA === client.id ? call.identityA : call.identityB;
+      const isSenderA = call.socketA === client.id;
+      const partnerSocketId = isSenderA ? call.socketB : call.socketA;
+      const fromIdentity = isSenderA ? call.identityA : call.identityB;
+      const recipientIdentity = isSenderA ? call.identityB : call.identityA;
+      const senderUserId = isSenderA ? call.userIdA : call.userIdB;
+      const recipientUserId = isSenderA ? call.userIdB : call.userIdA;
+      const sentAt = Date.now();
 
       const payload: ChatMessagePayload = {
         text,
         fromIdentity,
-        sentAt: Date.now(),
+        sentAt,
       };
 
       this.server.to(partnerSocketId).emit(SOCKET_EVENTS.CHAT_MESSAGE, payload);
+
+      this.chatArchive.enqueue({
+        roomName: call.roomName,
+        senderUserId: senderUserId || null,
+        senderIdentity: fromIdentity,
+        recipientUserId: recipientUserId || null,
+        recipientIdentity,
+        text,
+        sentAt,
+      });
+
       return { ok: true };
     } catch (error) {
       this.logger.error(
@@ -300,13 +344,22 @@ export class MatchingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() body?: SendTipPayload,
   ) {
-    const amount =
+    const amountRaw =
       typeof body?.amount === 'string' ? body.amount.trim().slice(0, 32) : '';
-    if (!amount) {
+    const amount = Number.parseInt(amountRaw, 10);
+    if (!Number.isFinite(amount) || amount < 1) {
       return { ok: false };
     }
 
     try {
+      const socketUser = client.data.user as SocketUser | undefined;
+      if (!socketUser?.userId) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Sign in to send tips.',
+        });
+        return { ok: false };
+      }
+
       const call = await this.matchmaking.getActiveCall(client.id);
       if (!call) {
         client.emit(SOCKET_EVENTS.ERROR, {
@@ -315,20 +368,54 @@ export class MatchingGateway
         return { ok: false };
       }
 
+      const partnerUserId =
+        call.userIdA === socketUser.userId ? call.userIdB : call.userIdA;
+      if (!partnerUserId) {
+        client.emit(SOCKET_EVENTS.ERROR, {
+          message: 'Cannot tip this partner.',
+        });
+        return { ok: false };
+      }
+
+      const menuItem =
+        typeof body?.menuItem === 'string'
+          ? body.menuItem.trim().slice(0, 120)
+          : '';
+
+      const spendResult = await this.coinsService.sendTip(
+        socketUser.userId,
+        partnerUserId,
+        amount,
+        menuItem || undefined,
+      );
+
       const partnerSocketId =
         call.socketA === client.id ? call.socketB : call.socketA;
       const fromIdentity =
         call.socketA === client.id ? call.identityA : call.identityB;
 
       const payload: TipReceivedPayload = {
-        amount,
+        amount: String(amount),
+        creatorReceived: String(spendResult.creatorReceived),
         fromIdentity,
         sentAt: Date.now(),
       };
 
       this.server.to(partnerSocketId).emit(SOCKET_EVENTS.TIP_RECEIVED, payload);
-      return { ok: true };
+      return { ok: true, newBalance: spendResult.newBalance };
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        const resp = error.getResponse();
+        const message =
+          typeof resp === 'object' &&
+          resp &&
+          'message' in resp &&
+          typeof (resp as { message?: string }).message === 'string'
+            ? (resp as { message: string }).message
+            : 'Insufficient coins';
+        client.emit(SOCKET_EVENTS.ERROR, { message });
+        return { ok: false };
+      }
       this.logger.error(
         `send_tip failed for ${client.id}`,
         (error as Error).stack,

@@ -17,12 +17,17 @@ import {
   X,
 } from 'lucide-react';
 import { ConnectionState } from 'livekit-client';
+import { useNavigate } from 'react-router-dom';
+import { consumeCreatorFanWaitingMessage } from '../hooks/useCreatorFanWaiting';
 import { useMatching } from '../hooks/useMatching';
 import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
 import { getSocket } from '../services/socket';
 import { COUNTRIES } from '../data/countries';
 import type { RoomMode } from './LandingPage';
+import { CoinModule } from './CoinModule';
+import { CoinWalletChip } from './CoinWalletChip';
 import { SubscriptionModal } from './SubscriptionModal';
+import { clearCreatorSession } from '../services/creators';
 import { UnbanRequestModal } from './UnbanRequestModal';
 import { ReportModal } from './ReportModal';
 import {
@@ -47,14 +52,17 @@ import {
 } from '../utils/cameraBootstrap';
 import {
   createAgeSession,
+  fetchAgeStatus,
   runGoCamAgeVerification,
 } from '../services/ageVerification';
 import { clearToken } from '../utils/auth';
+import { getCreatorEarnings } from '../services/coins';
 import { createPortal } from 'react-dom';
 import {
   SOCKET_EVENTS,
   type ChatMessagePayload,
   type TipReceivedPayload,
+  type CreatorFanWaitingPayload,
 } from '../types/events';
 
 function SearchingDots() {
@@ -80,8 +88,13 @@ type Country = (typeof COUNTRIES)[number];
 interface CallAppProps {
   mode?: RoomMode;
   username?: string;
-  onClose?: () => void;
   onLogout?: () => void;
+  /** Paid creator room — same call UI, no skip/tag, shows coin module */
+  variant?: 'match' | 'creator';
+  creatorName?: string;
+  onLeaveRoom?: () => void;
+  /** Exit creator room → random /match flow */
+  onGoToMatch?: () => void;
 }
 
 type GenderCheckStatus =
@@ -98,12 +111,18 @@ type GenderCheckStatus =
 export function CallApp({
   mode = 'moderated',
   username = 'Guest',
-  onClose,
   onLogout,
+  variant = 'match',
+  creatorName = 'Creator',
+  onLeaveRoom,
+  onGoToMatch,
 }: CallAppProps) {
+  const isCreatorRoom = variant === 'creator';
+  const navigate = useNavigate();
   const {
     phase,
     match,
+    statusMessage,
     startCall,
     leaveCall,
     markInCall,
@@ -145,6 +164,8 @@ export function CallApp({
   const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
   const [showTipPicker, setShowTipPicker] = useState(false);
+  const [showCreatorCoins, setShowCreatorCoins] = useState(false);
+  const [showCreatorLeaveModal, setShowCreatorLeaveModal] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(() => isUserSubscribed());
   const [isVip] = useState(() => isUserVip());
   const [pendingPref, setPendingPref] = useState<string | null>(null);
@@ -179,8 +200,12 @@ export function CallApp({
   const [showReportModal, setShowReportModal] = useState(false);
   const [tipToast, setTipToast] = useState<{
     amount: string;
+    creatorReceived?: string;
     fromIdentity: string;
   } | null>(null);
+  const [sessionEarnings, setSessionEarnings] = useState(0);
+  const [lifetimeEarnings, setLifetimeEarnings] = useState<number | null>(null);
+  const [fanWaitingMsg, setFanWaitingMsg] = useState<string | null>(null);
 
   const stopPreview = useCallback(() => {
     const stream = previewStreamRef.current;
@@ -334,6 +359,12 @@ export function CallApp({
     };
 
     try {
+      const ageStatus = await fetchAgeStatus();
+      if (ageStatus.isBanned) {
+        markBanned();
+        return;
+      }
+
       await ensurePreview({ required: true });
       const video = previewVideoRef.current;
       if (!video) {
@@ -388,7 +419,9 @@ export function CallApp({
           }
           setGenderCheck({
             status: 'verified',
-            message: 'Profile and age verified.',
+            message: isCreatorRoom
+              ? `Joining ${creatorName}'s room…`
+              : 'Profile and age verified.',
           });
           // Start the no-match clock only after verification finishes —
           // Go.cam age checks often take longer than the 60s search window.
@@ -447,7 +480,7 @@ export function CallApp({
     } finally {
       verificationRunningRef.current = false;
     }
-  }, [ensurePreview, startCall]);
+  }, [creatorName, ensurePreview, isCreatorRoom, startCall]);
 
   const [partnerFeedReady, setPartnerFeedReady] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
@@ -465,17 +498,31 @@ export function CallApp({
     genderCheck.status === 'retry' ||
     genderCheck.status === 'age_retry' ||
     needsCameraTap;
-  const isSearching =
+  const isSearching = !isCreatorRoom && (
     isSkipping ||
     isVerifying ||
     verifyFailed ||
     phase === 'waiting' ||
     phase === 'connecting' ||
     phase === 'idle' ||
-    phase === 'partner_left';
+    phase === 'partner_left'
+  );
+  const isCreatorWaiting =
+    isCreatorRoom &&
+    genderCheck.status === 'verified' &&
+    !partnerFeedReady &&
+    (phase === 'waiting' || phase === 'connecting' || phase === 'matched');
+  const showPartnerLoading =
+    isVerifying ||
+    verifyFailed ||
+    (!partnerFeedReady && !(isCreatorRoom && isCreatorWaiting));
   const isConnecting = !isSkipping && phase === 'matched' && !partnerFeedReady;
-  // Keep heart loader until the new partner's first video frame is painted
-  const showPartnerLoading = !partnerFeedReady || isVerifying || verifyFailed;
+  const isCreatorPartnerLeft = isCreatorRoom && phase === 'partner_left';
+  const showPartnerOverlay =
+    showPartnerLoading ||
+    isCreatorWaiting ||
+    verifyFailed ||
+    isCreatorPartnerLeft;
   const videoReady = partnerFeedReady && genderCheck.status === 'verified';
   const partnerLoadingLabel = isVerifying
     ? genderCheck.status === 'age_checking'
@@ -631,16 +678,81 @@ export function CallApp({
       const amount = payload?.amount?.trim();
       const fromIdentity = payload?.fromIdentity?.trim() || 'Someone';
       if (!amount) return;
-      setTipToast({ amount, fromIdentity });
+      const gross = Number.parseInt(amount, 10);
+      const creditedRaw = Number.parseInt(payload.creatorReceived?.trim() || '', 10);
+      const earned =
+        Number.isFinite(creditedRaw) && creditedRaw > 0
+          ? creditedRaw
+          : Number.isFinite(gross)
+            ? Math.floor(gross * 0.8)
+            : 0;
+      if (earned > 0) {
+        setSessionEarnings((prev) => prev + earned);
+        setLifetimeEarnings((prev) =>
+          prev === null ? earned : prev + earned,
+        );
+      }
+      setTipToast({
+        amount,
+        creatorReceived: payload.creatorReceived,
+        fromIdentity,
+      });
+    };
+
+    const onFanWaiting = (payload: CreatorFanWaitingPayload) => {
+      if (!isVip) return;
+      const msg =
+        payload?.message?.trim() ||
+        `${payload?.fanIdentity || 'A fan'} paid to enter your room.`;
+      setFanWaitingMsg(msg);
+      if (
+        genderCheck.status === 'verified' &&
+        (phase === 'idle' || phase === 'partner_left' || phase === 'error')
+      ) {
+        void startCall();
+      }
     };
 
     socket.on(SOCKET_EVENTS.CHAT_MESSAGE, onChatMessage);
     socket.on(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
+    socket.on(SOCKET_EVENTS.CREATOR_FAN_WAITING, onFanWaiting);
     return () => {
       socket.off(SOCKET_EVENTS.CHAT_MESSAGE, onChatMessage);
       socket.off(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
+      socket.off(SOCKET_EVENTS.CREATOR_FAN_WAITING, onFanWaiting);
     };
+  }, [genderCheck.status, isVip, phase, startCall]);
+
+  useEffect(() => {
+    const msg = consumeCreatorFanWaitingMessage();
+    if (msg) setFanWaitingMsg(msg);
   }, []);
+
+  useEffect(() => {
+    if (!isVip) return;
+    getCreatorEarnings().then((data) => {
+      if (data) setLifetimeEarnings(data.lifetimeEarnings);
+    });
+  }, [isVip]);
+
+  useEffect(() => {
+    if (phase === 'idle' || phase === 'partner_left') {
+      setSessionEarnings(0);
+    }
+  }, [phase]);
+
+  useEffect(() => {
+    if (!fanWaitingMsg) return;
+    if (genderCheck.status !== 'verified') return;
+    if (phase !== 'idle' && phase !== 'partner_left' && phase !== 'error') return;
+    void startCall();
+  }, [fanWaitingMsg, genderCheck.status, phase, startCall]);
+
+  useEffect(() => {
+    if (!fanWaitingMsg) return;
+    const timer = window.setTimeout(() => setFanWaitingMsg(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [fanWaitingMsg]);
 
   useEffect(() => {
     if (!tipToast) return;
@@ -720,7 +832,9 @@ export function CallApp({
   const requestPreferenceChange = useCallback(
     (nextPref: string) => {
       if (nextPref === genderPref || prefUpdating) return;
-      if (!isSubscribed) {
+      const isFreePref =
+        nextPref === 'everyone' || nextPref === 'couple' || nextPref === 'other';
+      if (!isSubscribed && !isFreePref) {
         setPendingPref(nextPref);
         setShowSettings(false);
         closeDesktopPickers();
@@ -948,8 +1062,21 @@ export function CallApp({
     void verifyProfileAndStart();
   }, [genderCheck.status, hasPreview, verifyProfileAndStart]);
 
+  // Matching server rejected start_call — don't leave UI stuck on "Searching…"
+  useEffect(() => {
+    if (phase !== 'error') return;
+    if (genderCheck.status !== 'verified') return;
+    setGenderCheck({
+      status: 'retry',
+      message:
+        statusMessage.trim() ||
+        'Could not join the match queue. Tap Retry Verification.',
+    });
+  }, [phase, statusMessage, genderCheck.status]);
+
   // After 1 minute of searching with no match → show Retry / Log Out modal
   useEffect(() => {
+    if (isCreatorRoom) return;
     if (showNoMatch) return;
     if (genderCheck.status !== 'verified') return;
 
@@ -980,10 +1107,11 @@ export function CallApp({
     }, remaining);
 
     return () => window.clearTimeout(id);
-  }, [phase, showNoMatch, leaveCall, genderCheck.status]);
+  }, [isCreatorRoom, phase, showNoMatch, leaveCall, genderCheck.status]);
 
   // When partner leaves/disconnects, tear down LiveKit and rejoin the queue
   useEffect(() => {
+    if (isCreatorRoom) return;
     if (phase !== 'partner_left' || rematchingRef.current || showNoMatch) return;
 
     let cancelled = false;
@@ -1008,7 +1136,7 @@ export function CallApp({
     return () => {
       cancelled = true;
     };
-  }, [phase, disconnect, startCall, clearRemoteMedia, ensurePreview, showNoMatch]);
+  }, [isCreatorRoom, phase, disconnect, startCall, clearRemoteMedia, ensurePreview, showNoMatch]);
 
   // Local PiP while searching / between matches.
   // Keep preview alive until LiveKit actually takes the camera (onBeforeEnableCamera).
@@ -1093,15 +1221,65 @@ export function CallApp({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [showCountryPicker, showGenderPicker, showTagInput]);
 
+  const handleGoToDeck = async () => {
+    parkCameraStream(previewStreamRef.current);
+    previewStreamRef.current = null;
+    clearRemoteMedia();
+    await disconnect();
+    await leaveCall();
+    if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
+    setHasPreview(false);
+    navigate('/deck');
+  };
+
+  const handleLeaveCreatorRoom = async () => {
+    await exitCreatorRoom('deck');
+  };
+
+  const exitCreatorRoom = async (destination: 'deck' | 'match') => {
+    setShowCreatorLeaveModal(false);
+    setShowCreatorCoins(false);
+    setPartnerFeedReady(false);
+    parkCameraStream(previewStreamRef.current);
+    previewStreamRef.current = null;
+    clearRemoteMedia();
+    await disconnect();
+    await leaveCall();
+    if (destination === 'deck') {
+      stopPreview();
+      discardBootstrappedCamera();
+    }
+    clearCreatorSession();
+    if (destination === 'deck') {
+      onLeaveRoom?.();
+    } else {
+      onGoToMatch?.();
+    }
+  };
+
+  useEffect(() => {
+    if (!isCreatorPartnerLeft) return;
+    setPartnerFeedReady(false);
+    setShowCreatorCoins(false);
+  }, [isCreatorPartnerLeft]);
+
   const handleClose = async () => {
+    if (isCreatorRoom) {
+      setShowCreatorLeaveModal(true);
+      return;
+    }
     await disconnect();
     await leaveCall();
     stopPreview();
     discardBootstrappedCamera();
-    onClose?.();
+    navigate('/match');
   };
 
   const handleLogout = async () => {
+    if (isCreatorRoom) {
+      setShowCreatorLeaveModal(true);
+      return;
+    }
     await disconnect();
     await leaveCall();
     stopPreview();
@@ -1110,14 +1288,13 @@ export function CallApp({
   };
 
   const handleLeave = async () => {
-    // Instantly lock UI on the heart loader — no black flash / stale partner frame
     setIsSkipping(true);
     setPartnerFeedReady(false);
     setShowNoMatch(false);
     searchStartedAtRef.current = Date.now();
     clearRemoteMedia();
     await disconnect();
-    await ensurePreview(); // restore local PiP before queueing again
+    await ensurePreview();
     await leaveCall();
     startCall();
   };
@@ -1134,7 +1311,19 @@ export function CallApp({
     startCall();
   };
 
-  const statusLine = isVerifying
+  const statusLine = isCreatorRoom
+    ? phase === 'partner_left'
+      ? `${creatorName} left — choose where to go next`
+      : phase === 'waiting'
+      ? `Waiting for ${creatorName} to go live on Match…`
+      : isVerifying
+        ? genderCheck.message
+        : verifyFailed
+          ? genderCheck.message
+          : isConnected
+            ? `In ${creatorName}'s room`
+            : genderCheck.message || `Joining ${creatorName}'s room…`
+    : isVerifying
     ? genderCheck.status === 'age_checking'
       ? `Confirming ${username} is 18+…`
       : `Verifying profile for ${username}…`
@@ -1146,8 +1335,15 @@ export function CallApp({
           ? '✨ Connected!'
           : `Welcome, ${username}`;
 
-  const partnerTitle =
-    partnerFeedReady && remoteIdentity
+  const partnerTitle = isCreatorRoom
+    ? partnerFeedReady && remoteIdentity
+      ? remoteIdentity
+      : phase === 'waiting'
+        ? `Waiting for ${creatorName}…`
+        : isConnected
+          ? creatorName
+          : `Joining ${creatorName}…`
+    : partnerFeedReady && remoteIdentity
       ? remoteIdentity
       : isVerifying
         ? genderCheck.status === 'age_checking'
@@ -1159,7 +1355,15 @@ export function CallApp({
             ? 'Verification paused'
             : 'Finding your spark…';
 
-  const partnerSubtitle = partnerFeedReady
+  const partnerSubtitle = isCreatorRoom
+    ? partnerFeedReady
+      ? 'Live now'
+      : phase === 'waiting'
+        ? 'Ask her to open Match and search'
+        : isConnecting
+          ? 'Connecting video…'
+          : 'Entering room…'
+    : partnerFeedReady
     ? 'Live now'
     : isVerifying
       ? genderCheck.status === 'age_checking'
@@ -1177,24 +1381,36 @@ export function CallApp({
 
   return (
     <div
-      className={`live-room ${mode}${isConnected ? ' is-connected' : ''}${showChat ? ' chat-open' : ''}`}
+      className={`live-room ${mode}${isCreatorRoom ? ' creator-room' : ''}${isConnected ? ' is-connected' : ''}${showChat ? ' chat-open' : ''}`}
     >
       <header className="live-header">
         <div>
           <img src="/assets/landing-bg-4.png" alt="" />
-          <span>Rizz Roulette</span>
+          <span>{isCreatorRoom ? `${creatorName}'s Room` : 'Rizz Roulette'}</span>
           <i className="connection-dot" style={{ opacity: 1 }} />
         </div>
         <div className="live-header-actions">
           <div className="live-header-top-btns">
-            <button
-              type="button"
-              className={`mobile-settings-btn${isMobileView && hasActiveFilters ? ' settings-active' : ''}`}
-              onClick={openSettings}
-              aria-label="Match settings"
-            >
-              <Settings size={18} />
-            </button>
+            {!isCreatorRoom && (
+              <button
+                type="button"
+                className="creator-deck-link"
+                aria-label="Creator deck"
+                onClick={() => void handleGoToDeck()}
+              >
+                Creators
+              </button>
+            )}
+            {!isCreatorRoom && (
+              <button
+                type="button"
+                className={`mobile-settings-btn${isMobileView && hasActiveFilters ? ' settings-active' : ''}`}
+                onClick={openSettings}
+                aria-label="Match settings"
+              >
+                <Settings size={18} />
+              </button>
+            )}
             <button type="button" onClick={() => void handleLogout()} aria-label="Close">
               <X size={18} />
             </button>
@@ -1203,6 +1419,7 @@ export function CallApp({
       </header>
 
       <div className="live-hero">
+        {!isCreatorRoom && (
         <div className="live-hero-skip-row">
           {/* Mobile: always show Skip / Next (desktop-skip is hidden ≤768px) */}
           <button
@@ -1254,7 +1471,7 @@ export function CallApp({
             </button>
           )}
 
-          {Boolean(match?.partnerIsVip) && (
+          {Boolean(match?.partnerIsVip) && !isCreatorRoom && (
             <button
               type="button"
               className={`tip-hero-btn${showTipPicker ? ' active' : ''}`}
@@ -1271,7 +1488,38 @@ export function CallApp({
             </button>
           )}
         </div>
+        )}
+        {isCreatorRoom && isConnected && Boolean(match?.partnerUserId) && (
+          <div className="live-hero-skip-row creator-room-hero-actions">
+            <button
+              type="button"
+              className="report-hero-btn"
+              onClick={() => {
+                setShowReportModal(true);
+                setShowTipPicker(false);
+                setShowSettings(false);
+                closeDesktopPickers();
+              }}
+              aria-label="Report this user"
+            >
+              <Flag size={14} /> Report
+            </button>
+          </div>
+        )}
+        {isVip && isConnected && (
+          <div className="creator-earnings-strip" aria-live="polite">
+            <span>
+              This call: <b>{sessionEarnings.toLocaleString()}</b> coins
+            </span>
+            {lifetimeEarnings !== null && (
+              <span>
+                Lifetime: <b>{lifetimeEarnings.toLocaleString()}</b> coins
+              </span>
+            )}
+          </div>
+        )}
         <p>{statusLine}</p>
+        {!isCreatorRoom && (
         <button
           className="unlock-button desktop-premium-btn"
           type="button"
@@ -1279,11 +1527,12 @@ export function CallApp({
         >
           <Crown size={16} /> Premium
         </button>
+        )}
       </div>
 
       <main className="video-stage">
         <section
-          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${verifyFailed ? ' verify-failed' : ''}`}
+          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${isCreatorWaiting ? ' creator-waiting' : ''}${isCreatorRoom && showCreatorCoins ? ' coins-open' : ''}${verifyFailed ? ' verify-failed' : ''}`}
           aria-label="Partner video"
         >
           <div className="partner-photo" aria-hidden="true" />
@@ -1296,17 +1545,58 @@ export function CallApp({
           <audio ref={remoteAudioRef} autoPlay />
           {/* Always mounted so skip never flashes black / empty without the heart */}
           <div
-            className={`partner-loading-layer${showPartnerLoading ? ' is-visible' : ''}${verifyFailed ? ' has-actions' : ''}`}
-            aria-hidden={!showPartnerLoading}
+            className={`partner-loading-layer${showPartnerOverlay ? ' is-visible' : ''}${verifyFailed || isCreatorPartnerLeft ? ' has-actions' : ''}${isCreatorWaiting ? ' creator-waiting-layer' : ''}`}
+            aria-hidden={!showPartnerOverlay}
           >
             <div className="partner-loading-shimmer" />
             <div className="live-partner-placeholder">
               {isUnmod ? '🎲' : '💘'}
             </div>
-            {showPartnerLoading && !verifyFailed && (
+            {showPartnerLoading && !verifyFailed && !isCreatorWaiting && (
               <span className="partner-loading-label">
                 {partnerLoadingLabel}
               </span>
+            )}
+            {isCreatorWaiting && (
+              <div className="partner-verify-actions creator-wait-panel">
+                <strong className="partner-verify-title">Waiting for {creatorName}</strong>
+                <p className="partner-verify-message">
+                  Your camera stays on. She must open <strong>Match</strong> and tap search to connect.
+                </p>
+                <div className="partner-verify-buttons">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void handleLeaveCreatorRoom()}
+                  >
+                    Back to deck
+                  </button>
+                </div>
+              </div>
+            )}
+            {isCreatorPartnerLeft && (
+              <div className="partner-verify-actions creator-exit-panel">
+                <strong className="partner-verify-title">{creatorName} left the room</strong>
+                <p className="partner-verify-message">
+                  Choose where to go next — browse other creators or jump back to random chat.
+                </p>
+                <div className="partner-verify-buttons">
+                  <button
+                    type="button"
+                    className="hot-button"
+                    onClick={() => void exitCreatorRoom('deck')}
+                  >
+                    Back to deck
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => void exitCreatorRoom('match')}
+                  >
+                    Random match
+                  </button>
+                </div>
+              </div>
             )}
             {verifyFailed && (
               <div className="partner-verify-actions">
@@ -1327,19 +1617,20 @@ export function CallApp({
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => void handleClose()}
+                    onClick={() => void (isCreatorRoom ? handleLeaveCreatorRoom() : handleClose())}
                   >
-                    Back
+                    {isCreatorRoom ? 'Back to deck' : 'Back'}
                   </button>
                 </div>
               </div>
             )}
           </div>
           <span className="video-label">Partner</span>
-          {Boolean(match?.partnerIsVip) && (
+          {Boolean(match?.partnerIsVip) && !isCreatorRoom && (
             <span className="video-label vip-badge partner-vip-badge">VIP</span>
           )}
 
+          {!isCreatorRoom && (
           <div className="filter-pills desktop-filter-pills" ref={filterPillsRef}>
             <div className="filter-pill-wrap">
               <button
@@ -1477,16 +1768,21 @@ export function CallApp({
             </div>
 
           </div>
+          )}
 
+          {isCreatorRoom && showCreatorCoins && (
+            <CoinModule
+              partnerIdentity={creatorName}
+              tipsEnabled={isConnected && partnerFeedReady}
+            />
+          )}
+
+          {!(isCreatorRoom && showCreatorCoins) && (
           <div className="partner-copy">
-            <strong>
-              {partnerTitle}
-              {Boolean(match?.partnerIsVip) && partnerFeedReady && (
-                <span className="partner-vip-inline">VIP</span>
-              )}
-            </strong>
+            <strong>{partnerTitle}</strong>
             <span>{partnerSubtitle}</span>
           </div>
+          )}
         </section>
 
         <section
@@ -1605,6 +1901,26 @@ export function CallApp({
           <Heart size={22} />
           <span className="control-label">{liked ? 'Liked' : 'Like'}</span>
         </button>
+        {isCreatorRoom && (
+          <button
+            type="button"
+            className={`bottom-control-item tip-control${showCreatorCoins ? ' active' : ''}`}
+            onClick={() => {
+              setShowCreatorCoins((v) => {
+                const next = !v;
+                if (next) setShowChat(false);
+                return next;
+              });
+            }}
+            aria-pressed={showCreatorCoins}
+            aria-label={showCreatorCoins ? 'Hide tips and coins' : 'Show tips and coins'}
+          >
+            <span className="control-icon" aria-hidden="true">
+              🪙
+            </span>
+            <span className="control-label">Tips</span>
+          </button>
+        )}
         <button
           type="button"
           className={`bottom-control-item${!micEnabled ? ' media-off' : ''}`}
@@ -1632,6 +1948,7 @@ export function CallApp({
       >
         <div className="chat-panel-header">
           <span>Chat</span>
+          <CoinWalletChip variant="compact" />
           <button type="button" onClick={closeChat} aria-label="Close chat">
             <X size={16} />
           </button>
@@ -1684,7 +2001,7 @@ export function CallApp({
         </form>
       </aside>
 
-      {showSettings && isMobileView && (
+      {showSettings && isMobileView && !isCreatorRoom && (
         <div
           className="live-settings-overlay"
           role="dialog"
@@ -1800,7 +2117,7 @@ export function CallApp({
         </div>
       )}
 
-      {showTipPicker && Boolean(match?.partnerIsVip) && (
+      {showTipPicker && Boolean(match?.partnerIsVip) && !isCreatorRoom && (
         <div
           className="live-settings-overlay tip-sheet-overlay"
           role="dialog"
@@ -1892,6 +2209,46 @@ export function CallApp({
               </div>
             </div>
           ))}
+      {showCreatorLeaveModal && isCreatorRoom && (
+        <div
+          className="live-room-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="creator-leave-title"
+        >
+          <div className="live-room-overlay-card">
+            <div className="live-room-overlay-icon" aria-hidden="true">
+              💘
+            </div>
+            <h3 id="creator-leave-title">Leave {creatorName}&apos;s room?</h3>
+            <p>Go back to the creator deck or return to random match chat.</p>
+            <div className="flow-actions">
+              <button
+                type="button"
+                className="hot-button"
+                onClick={() => void exitCreatorRoom('deck')}
+              >
+                Back to deck
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void exitCreatorRoom('match')}
+              >
+                Random match
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setShowCreatorLeaveModal(false)}
+              >
+                Stay in room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNoMatch && (
         <div
           className="live-room-overlay"
@@ -1943,6 +2300,27 @@ export function CallApp({
         />
       )}
 
+      {fanWaitingMsg && (
+        <div className="tip-toast fan-waiting-toast" role="status" aria-live="polite">
+          <div className="tip-toast-glow" aria-hidden="true" />
+          <div className="tip-toast-icon" aria-hidden="true">
+            🔔
+          </div>
+          <div className="tip-toast-copy">
+            <strong>Fan waiting in your room</strong>
+            <span>{fanWaitingMsg}</span>
+          </div>
+          <button
+            type="button"
+            className="tip-toast-close"
+            onClick={() => setFanWaitingMsg(null)}
+            aria-label="Dismiss notification"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {tipToast && (
         <div className="tip-toast" role="status" aria-live="polite">
           <div className="tip-toast-glow" aria-hidden="true" />
@@ -1952,8 +2330,14 @@ export function CallApp({
           <div className="tip-toast-copy">
             <strong>New tip received!</strong>
             <span>
-              <b>{tipToast.fromIdentity}</b> sent you{' '}
+              <b>{tipToast.fromIdentity}</b> sent{' '}
               <em>{tipToast.amount}</em>
+              {tipToast.creatorReceived && (
+                <>
+                  {' '}
+                  — you earned <em>{tipToast.creatorReceived}</em> coins
+                </>
+              )}
             </span>
           </div>
           <button

@@ -31,11 +31,21 @@ export const RedisKeys = {
   /** STRING (JSON) — active call shared by both participants */
   activeCall: (socketId: string) => `call:socket:${socketId}`,
 
+  /** LIST — fans waiting for a specific creator (creator Mongo user id) */
+  creatorWaitQueue: (creatorUserId: string) =>
+    `matchmaking:creator-wait:${creatorUserId}`,
+
+  /** STRING — maps Mongo user id → current socket id */
+  userSocket: (userId: string) => `presence:user-socket:${userId}`,
+
   /** STRING (JSON) — live match prefs cache { gender, interestedIn } */
   userPrefs: (userId: string) => `user:prefs:${userId}`,
 
   /** LIST — async Mongo preference update jobs */
   prefUpdateQueue: () => 'jobs:pref-update',
+
+  /** LIST — async in-call chat archival jobs (admin audit log) */
+  chatArchiveQueue: () => 'jobs:chat-archive',
 
   /**
    * SET — userIds that must never be rematched with this user

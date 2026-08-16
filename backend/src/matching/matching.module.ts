@@ -7,6 +7,8 @@ import { UsersModule } from '../users/users.module';
 import { ProfileModule } from '../profile/profile.module';
 import { GenderVerificationModule } from '../gender-verification/gender-verification.module';
 import { AgeVerificationModule } from '../age-verification/age-verification.module';
+import { CoinsModule } from '../coins/coins.module';
+import { ChatModule } from '../chat/chat.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { AgeVerificationModule } from '../age-verification/age-verification.modu
     ProfileModule,
     GenderVerificationModule,
     AgeVerificationModule,
+    CoinsModule,
+    ChatModule,
   ],
   providers: [MatchingGateway],
 })

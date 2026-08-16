@@ -17,6 +17,8 @@ export type CreatorUser = {
   isBanned: boolean;
   banReason: string | null;
   bannedAt: string | null;
+  creatorEarnings?: number;
+  walletCoins?: number;
   createdAt: string | null;
 };
 

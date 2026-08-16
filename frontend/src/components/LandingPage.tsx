@@ -157,8 +157,8 @@ function LogoLockup() {
   return (
     <div className="logo-spin-wrap anim-fade-up">
       <span className="roulette-o-cover"></span>
-      <img className="top-brand-logo" src="/assets/logo-main.png" alt="Rizz Roulette" />
-      <img className="spinning-roulette-o" src="/assets/logo-spin.png" alt="" aria-hidden="true" />
+      <img className="top-brand-logo" src="/assets/logo-main.jpeg" alt="Rizz Roulette" />
+      <img className="spinning-roulette-o" src="/assets/logo-reveal.png" alt="" aria-hidden="true" />
     </div>
   );
 }
@@ -253,7 +253,7 @@ function SignupPanel({
     email: inviteEmail ?? '',
     password: '',
     gender: 'female',
-    interestedIn: 'female',
+    interestedIn: 'everyone',
   });
   const [cardData, setCardData] = useState({
     nameOnCard: '',
@@ -725,12 +725,13 @@ export type LandingPageProps = {
   mode: RoomMode;
   onModeChange: (mode: RoomMode) => void;
   onRegister?: (user: unknown, token: string) => void;
+  pendingCreatorRoom?: boolean;
 };
 
-export default function LandingPage({ mode, onModeChange, onRegister }: LandingPageProps) {
+export default function LandingPage({ mode, onModeChange, onRegister, pendingCreatorRoom }: LandingPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const inviteIdFromUrl = searchParams.get('invite_id');
-  const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl));
+  const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl) || Boolean(pendingCreatorRoom));
   const [safetyOpen, setSafetyOpen] = useState(false);
   const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
   const [inviteId, setInviteId] = useState<string | null>(inviteIdFromUrl);

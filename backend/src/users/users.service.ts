@@ -253,34 +253,47 @@ export class UsersService {
     if (typeof query.isSubscribed === 'boolean') {
       filter.isSubscribed = query.isSubscribed;
     }
+
+    const conditions: FilterQuery<UserDocument>[] = [filter];
+
     if (typeof query.isVip === 'boolean') {
-      // Creators: isVip === true. Normal users: missing/false.
-      filter.isVip = query.isVip ? true : { $ne: true };
+      if (query.isVip) {
+        conditions.push({
+          $or: [{ isVip: true }, { creatorInviteId: { $ne: null } }],
+        });
+      } else {
+        conditions.push({ isVip: { $ne: true }, creatorInviteId: null });
+      }
     }
+
     if (query.gender) {
-      filter.gender = query.gender;
+      conditions.push({ gender: query.gender });
     }
 
     const search = query.search?.trim();
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
-      filter.$or = [
-        { firstName: regex },
-        { email: regex },
-        { country: regex },
-        { registrationIp: regex },
-      ];
+      conditions.push({
+        $or: [
+          { firstName: regex },
+          { email: regex },
+          { country: regex },
+          { registrationIp: regex },
+        ],
+      });
     }
+
+    const finalFilter = conditions.length > 1 ? { $and: conditions } : conditions[0];
 
     const [items, total] = await Promise.all([
       this.userModel
-        .find(filter)
+        .find(finalFilter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .exec(),
-      this.userModel.countDocuments(filter).exec(),
+      this.userModel.countDocuments(finalFilter).exec(),
     ]);
 
     return {

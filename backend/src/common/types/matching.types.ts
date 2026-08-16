@@ -15,6 +15,8 @@ export interface WaitingUser {
   isVip?: boolean;
   /** Mongo user id when authenticated */
   userId?: string;
+  /** Fan targeting a specific creator room */
+  targetCreatorUserId?: string;
 }
 
 export interface StartCallPayload {
@@ -22,6 +24,8 @@ export interface StartCallPayload {
   /** Fallback when JWT/user lookup is unavailable */
   gender?: string;
   interestedIn?: string;
+  /** Mongo user id of the creator room the fan wants to enter */
+  targetCreatorUserId?: string;
 }
 
 export interface MatchedPayload {
@@ -53,12 +57,21 @@ export interface ChatMessagePayload {
 
 export interface SendTipPayload {
   amount: string;
+  /** Preset menu label or custom request text */
+  menuItem?: string;
 }
 
 export interface TipReceivedPayload {
   amount: string;
+  /** Coins credited to the creator (80% share) */
+  creatorReceived?: string;
   fromIdentity: string;
   sentAt: number;
+}
+
+export interface CreatorFanWaitingPayload {
+  fanIdentity: string;
+  message: string;
 }
 
 export const SOCKET_EVENTS = {
@@ -80,6 +93,8 @@ export const SOCKET_EVENTS = {
   CHAT_MESSAGE: 'chat_message',
   /** Server → client: tip received from partner */
   TIP_RECEIVED: 'tip_received',
+  /** Server → creator VIP: paid fan waiting for their room */
+  CREATOR_FAN_WAITING: 'creator_fan_waiting',
   /** Server → client: recoverable error message */
   ERROR: 'error',
 } as const;

@@ -24,9 +24,11 @@ export class RegisterDto {
   @IsIn(['male', 'female'])
   gender: string;
 
+  /** Defaults to everyone when omitted — signup UI does not collect this yet. */
+  @IsOptional()
   @IsString()
   @IsIn(['male', 'female', 'everyone', 'couple', 'other'])
-  interestedIn: string;
+  interestedIn?: string;
 
   /** One-time creator invite UUID from `?invite_id=` */
   @IsOptional()

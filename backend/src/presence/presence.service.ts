@@ -139,5 +139,23 @@ export class PresenceService implements OnModuleInit {
     const onlineKey = this.redis.key(RedisKeys.onlineSet());
     return this.redis.getClient().scard(onlineKey);
   }
+
+  async setUserSocket(userId: string, socketId: string): Promise<void> {
+    if (!userId) return;
+    const key = this.redis.key(RedisKeys.userSocket(userId));
+    await this.redis.getClient().set(key, socketId);
+  }
+
+  async clearUserSocket(userId: string): Promise<void> {
+    if (!userId) return;
+    const key = this.redis.key(RedisKeys.userSocket(userId));
+    await this.redis.getClient().del(key);
+  }
+
+  async getSocketForUser(userId: string): Promise<string | null> {
+    if (!userId) return null;
+    const key = this.redis.key(RedisKeys.userSocket(userId));
+    return this.redis.getClient().get(key);
+  }
 }
 

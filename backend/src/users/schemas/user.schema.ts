@@ -82,6 +82,13 @@ export class User {
 
   @Prop({ type: Number, default: null })
   ageVerificationSessionId: number | null;
+
+  @Prop({ type: Number, default: 0 })
+  coins: number;
+
+  /** Lifetime creator earnings from tips and room entry (payout basis). */
+  @Prop({ type: Number, default: 0 })
+  creatorEarnings: number;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
