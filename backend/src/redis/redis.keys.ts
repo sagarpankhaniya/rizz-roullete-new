@@ -31,6 +31,12 @@ export const RedisKeys = {
   /** STRING (JSON) — active call shared by both participants */
   activeCall: (socketId: string) => `call:socket:${socketId}`,
 
+  /** STRING (JSON) — active call lookup by Mongo user id (reconnect resume) */
+  activeCallUser: (userId: string) => `call:user:${userId}`,
+
+  /** STRING — socket id that disconnected mid-call; EX = grace window */
+  callGrace: (userId: string) => `call:grace:${userId}`,
+
   /** LIST — fans waiting for a specific creator (creator Mongo user id) */
   creatorWaitQueue: (creatorUserId: string) =>
     `matchmaking:creator-wait:${creatorUserId}`,

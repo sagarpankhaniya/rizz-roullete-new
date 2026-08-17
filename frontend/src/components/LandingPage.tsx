@@ -432,8 +432,8 @@ function SignupPanel({
   }
 
   return (
-    <section className={`flow-backdrop rizz-page ${mode}`}>
-      <div className="flow-panel" role="dialog" aria-modal="true" aria-labelledby="rrFlowTitle">
+    <section className={`flow-backdrop flow-backdrop-solid rizz-page ${mode}`}>
+      <div className="flow-panel flow-panel-solid" role="dialog" aria-modal="true" aria-labelledby="rrFlowTitle">
         <div className="flow-top">
           <span className="rr-pill">
             {isLogin ? 'User Login' : active.chip}

@@ -39,6 +39,9 @@ export const envSchema = z.object({
 
   MATCH_RECENT_HOURS: z.coerce.number().int().positive().default(24),
   PRESENCE_TTL_SEC: z.coerce.number().int().positive().default(45),
+  SOCKET_PING_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  SOCKET_PING_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  CALL_DISCONNECT_GRACE_SEC: z.coerce.number().int().positive().optional(),
 
   THROTTLE_TTL_MS: z.coerce.number().int().positive().default(60_000),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(100),

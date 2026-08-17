@@ -70,6 +70,17 @@ export default () => ({
    * the keys in the LiveKit server config (e.g. /etc/livekit.yaml).
    * RoomService HTTP host is derived from LIVEKIT_URL (ws→http, wss→https).
    */
+  socket: {
+    /** Allow mobile/background tabs extra time before treating socket as dead */
+    pingTimeoutMs: parseInt(process.env.SOCKET_PING_TIMEOUT_MS ?? '60000', 10),
+    pingIntervalMs: parseInt(process.env.SOCKET_PING_INTERVAL_MS ?? '25000', 10),
+    /** Seconds to wait for socket reconnect before ending an active call */
+    callDisconnectGraceSec: parseInt(
+      process.env.CALL_DISCONNECT_GRACE_SEC ?? '30',
+      10,
+    ),
+  },
+
   livekit: {
     /** Browser WebSocket URL returned on `matched` (ws:// or wss://) */
     url: process.env.LIVEKIT_URL,
@@ -84,6 +95,21 @@ export default () => ({
       process.env.LIVEKIT_MAX_PARTICIPANTS ?? '2',
       10,
     ),
+    /** Shared roulette pool — participants stay connected across skips */
+    poolRoomName: process.env.LIVEKIT_POOL_ROOM ?? 'match-pool',
+    poolMaxParticipants: parseInt(
+      process.env.LIVEKIT_POOL_MAX_PARTICIPANTS ?? '500',
+      10,
+    ),
     tokenTtl: process.env.LIVEKIT_TOKEN_TTL ?? '2h',
+  },
+
+  /** Azure AI Translator — server-side only; never expose keys to the browser. */
+  translation: {
+    apiKey: process.env.AZURE_TRANSLATOR_KEY,
+    region: process.env.AZURE_TRANSLATOR_REGION,
+    endpoint:
+      process.env.AZURE_TRANSLATOR_ENDPOINT ??
+      'https://api.cognitive.microsofttranslator.com',
   },
 });

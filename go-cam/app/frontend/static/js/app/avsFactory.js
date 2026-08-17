@@ -1379,7 +1379,7 @@ var AvsFactory;
             Config.MAX_VALID_FACE_SCAN_NUMBER = 5;
             Config.MAX_TOTAL_FACE_SCAN_NUMBER = 150;
             Config.MAX_TOTAL_FACE_EXPRESSION_SCAN_NUMBER = 150;
-            Config.MIN_ALLOWED_AVERAGE_AGE = 25;
+            Config.MIN_ALLOWED_AVERAGE_AGE = 18;
             Config.FACE_SCAN_INTERVAL_MS = 400;
             Config.EVENT_NAME_PREFIX = 'selfieAgeDetectionPage';
             Config.MAX_FACE_DISTANCE_TO_MATCH = 0.5;
@@ -1481,10 +1481,10 @@ var AvsFactory;
             Method.getAgeAreaString = function (label, age) {
                 var detectedAgeString = label + ': ';
                 if (age >= SelfieAgeDetectionPage.Config.MIN_ALLOWED_AVERAGE_AGE) {
-                    detectedAgeString += 'Adult';
+                    detectedAgeString += '18+';
                 }
                 else {
-                    detectedAgeString += 'Minor';
+                    detectedAgeString += 'Under 18';
                 }
                 if (Application.showDetectedAgeNumber) {
                     detectedAgeString += ' (' + age + ')';
@@ -1505,7 +1505,7 @@ var AvsFactory;
                             SelfieAgeDetectionPage.instance.entity.SelfieAgeDetection.averageAge = ageResult.averageAge;
                             SelfieAgeDetectionPage.instance.ui.FaceGuideAgeArea.show();
                             SelfieAgeDetectionPage.instance.ui.SelfieAgeDetectionCurrentAgeArea.show();
-                            SelfieAgeDetectionPage.instance.ui.SelfieAgeDetectionCurrentAgeArea.setContent(Method.getAgeAreaString('Current detected age', ageResult.age.toFixed()));
+                            SelfieAgeDetectionPage.instance.ui.SelfieAgeDetectionCurrentAgeArea.setContent(Method.getAgeAreaString('Current detected age', Math.round(ageResult.age)));
                             SelfieAgeDetectionPage.instance.debug.logToContainer('<p>Current: ' + ageResult.age.toFixed() + ' Average: ' + ageResult.averageAge + '</p>');
                             SelfieAgeDetectionPage.instance.plugin.Library.Ml.FaceApi.extractFaceImage(faceResult.detection, function (canvasFace) {
                                 SelfieAgeDetectionPage.instance.entity.SelfieAgeDetection.validCanvasFaceList.push(canvasFace[0]);

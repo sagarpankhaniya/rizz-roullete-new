@@ -7,6 +7,7 @@ import {
   SOCKET_EVENTS,
   type CallPhase,
   type ErrorPayload,
+  type LiveKitCredentials,
   type MatchedPayload,
   type PartnerLeftPayload,
   type StartCallPayload,
@@ -23,9 +24,15 @@ export function useMatching(identity?: string) {
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [statusMessage, setStatusMessage] = useState('Ready to start a call.');
   const [match, setMatch] = useState<MatchedPayload | null>(null);
+  const [livekitSession, setLivekitSession] =
+    useState<LiveKitCredentials | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const identityRef = useRef(identity);
   identityRef.current = identity;
+
+  const applyLivekitCredentials = useCallback((payload: LiveKitCredentials) => {
+    setLivekitSession(payload);
+  }, []);
 
   useEffect(() => {
     const socket = getSocket();
@@ -42,14 +49,23 @@ export function useMatching(identity?: string) {
     const onWaiting = (payload: WaitingPayload) => {
       setPhase('waiting');
       setStatusMessage(payload.message);
+      applyLivekitCredentials(payload);
     };
 
     const onMatched = (payload: MatchedPayload) => {
       setMatch(payload);
       setPhase('matched');
+      applyLivekitCredentials(payload);
       setStatusMessage(
         `Matched with ${payload.partnerIdentity}. Connecting to LiveKit…`,
       );
+    };
+
+    const onCallResumed = (payload: MatchedPayload) => {
+      setMatch(payload);
+      setPhase('matched');
+      applyLivekitCredentials(payload);
+      setStatusMessage('Reconnected — resuming your call…');
     };
 
     const onPartnerLeft = (payload: PartnerLeftPayload) => {
@@ -66,6 +82,7 @@ export function useMatching(identity?: string) {
     socket.on('connect', onConnect);
     socket.on(SOCKET_EVENTS.WAITING, onWaiting);
     socket.on(SOCKET_EVENTS.MATCHED, onMatched);
+    socket.on(SOCKET_EVENTS.CALL_RESUMED, onCallResumed);
     socket.on(SOCKET_EVENTS.PARTNER_LEFT, onPartnerLeft);
     socket.on(SOCKET_EVENTS.ERROR, onError);
 
@@ -73,11 +90,12 @@ export function useMatching(identity?: string) {
       socket.off('connect', onConnect);
       socket.off(SOCKET_EVENTS.WAITING, onWaiting);
       socket.off(SOCKET_EVENTS.MATCHED, onMatched);
+      socket.off(SOCKET_EVENTS.CALL_RESUMED, onCallResumed);
       socket.off(SOCKET_EVENTS.PARTNER_LEFT, onPartnerLeft);
       socket.off(SOCKET_EVENTS.ERROR, onError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [applyLivekitCredentials]);
 
   const startCall = useCallback(() => {
     const socket = socketRef.current ?? getSocket();
@@ -139,6 +157,7 @@ export function useMatching(identity?: string) {
 
   const reset = useCallback(() => {
     setMatch(null);
+    setLivekitSession(null);
     setPhase('idle');
     setStatusMessage('Ready to start a call.');
   }, []);
@@ -157,6 +176,8 @@ export function useMatching(identity?: string) {
     phase,
     statusMessage,
     match,
+    livekitSession,
+    partnerLivekitIdentity: match?.partnerLivekitIdentity ?? null,
     startCall,
     leaveCall,
     reset,

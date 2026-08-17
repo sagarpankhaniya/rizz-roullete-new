@@ -3,6 +3,7 @@ import {
   Camera,
   Crown,
   Flag,
+  Globe,
   Heart,
   MessageCircle,
   Mic,
@@ -56,6 +57,12 @@ import {
   runGoCamAgeVerification,
 } from '../services/ageVerification';
 import { clearToken } from '../utils/auth';
+import {
+  CHAT_TRANSLATE_OPTIONS,
+  chatTranslatePayload,
+  loadChatTranslateLanguage,
+  saveChatTranslateLanguage,
+} from '../utils/chatTranslation';
 import { getCreatorEarnings } from '../services/coins';
 import { createPortal } from 'react-dom';
 import {
@@ -122,6 +129,8 @@ export function CallApp({
   const {
     phase,
     match,
+    livekitSession,
+    partnerLivekitIdentity,
     statusMessage,
     startCall,
     leaveCall,
@@ -144,8 +153,16 @@ export function CallApp({
   const [chatDraft, setChatDraft] = useState('');
   const [chatUnread, setChatUnread] = useState(0);
   const [chatMessages, setChatMessages] = useState<
-    Array<{ id: string; text: string; from: 'you' | 'partner' }>
+    Array<{
+      id: string;
+      text: string;
+      translatedText?: string;
+      from: 'you' | 'partner';
+    }>
   >([]);
+  const [chatTranslateLang, setChatTranslateLang] = useState(
+    loadChatTranslateLanguage,
+  );
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const showChatRef = useRef(showChat);
   showChatRef.current = showChat;
@@ -218,6 +235,9 @@ export function CallApp({
     setHasPreview(false);
   }, []);
 
+  const livekitActive =
+    genderCheck.status === 'verified' && Boolean(livekitSession);
+
   const {
     localVideoRef,
     remoteVideoRef,
@@ -231,8 +251,11 @@ export function CallApp({
     switchCamera,
     disconnect,
     clearRemoteMedia,
+    unsubscribePartner,
   } = useLiveKitRoom({
-    match,
+    session: livekitSession,
+    partnerLivekitIdentity,
+    active: livekitActive,
     onConnected: markInCall,
     onError: markLiveKitError,
     // Free front cam only in the moment LiveKit needs it
@@ -647,6 +670,29 @@ export function CallApp({
     getSocket().emit(SOCKET_EVENTS.SEND_CHAT, { text });
   };
 
+  const syncChatTranslatePreference = useCallback((code: string) => {
+    getSocket().emit(
+      SOCKET_EVENTS.SET_CHAT_TRANSLATE,
+      chatTranslatePayload(code),
+    );
+  }, []);
+
+  const onChatTranslateChange = (code: string) => {
+    setChatTranslateLang(code);
+    saveChatTranslateLanguage(code);
+    syncChatTranslatePreference(code);
+  };
+
+  useEffect(() => {
+    const socket = getSocket();
+    const applyPreference = () => syncChatTranslatePreference(chatTranslateLang);
+    if (socket.connected) applyPreference();
+    socket.on('connect', applyPreference);
+    return () => {
+      socket.off('connect', applyPreference);
+    };
+  }, [chatTranslateLang, syncChatTranslatePreference]);
+
   useEffect(() => {
     if (!isConnected) {
       setChatMessages([]);
@@ -666,6 +712,7 @@ export function CallApp({
         {
           id: `${payload.sentAt ?? Date.now()}-${Math.random()}`,
           text,
+          translatedText: payload.translatedText?.trim() || undefined,
           from: 'partner',
         },
       ]);
@@ -795,12 +842,10 @@ export function CallApp({
     setIsSkipping(true);
     setPartnerFeedReady(false);
     searchStartedAtRef.current = Date.now();
-    clearRemoteMedia();
-    await disconnect();
-    await ensurePreview();
+    unsubscribePartner();
     await leaveCall();
     startCall();
-  }, [clearRemoteMedia, disconnect, ensurePreview, leaveCall, startCall]);
+  }, [unsubscribePartner, leaveCall, startCall]);
 
   const applyPreferenceChange = useCallback(
     async (nextPref: string) => {
@@ -924,7 +969,7 @@ export function CallApp({
     setSelectedTip(null);
     setCustomTip('');
     setTipStatus('');
-  }, [match?.roomName]);
+  }, [match?.sessionId]);
 
   // Reveal partner video only after the first decoded frame (avoids black → flash)
   useEffect(() => {
@@ -1080,16 +1125,17 @@ export function CallApp({
     if (showNoMatch) return;
     if (genderCheck.status !== 'verified') return;
 
-    if (phase === 'matched' || phase === 'in_call') {
+    // Never end an active call — only count time while actually in the queue.
+    if (
+      phase === 'matched' ||
+      phase === 'in_call' ||
+      isConnected
+    ) {
       searchStartedAtRef.current = null;
       return;
     }
 
-    const searching =
-      phase === 'waiting' ||
-      phase === 'connecting' ||
-      phase === 'partner_left' ||
-      phase === 'idle';
+    const searching = phase === 'waiting' || phase === 'connecting';
 
     if (!searching) return;
 
@@ -1107,9 +1153,16 @@ export function CallApp({
     }, remaining);
 
     return () => window.clearTimeout(id);
-  }, [isCreatorRoom, phase, showNoMatch, leaveCall, genderCheck.status]);
+  }, [
+    isCreatorRoom,
+    phase,
+    showNoMatch,
+    leaveCall,
+    genderCheck.status,
+    isConnected,
+  ]);
 
-  // When partner leaves/disconnects, tear down LiveKit and rejoin the queue
+  // When partner leaves/disconnects, switch subscription and rejoin the queue
   useEffect(() => {
     if (isCreatorRoom) return;
     if (phase !== 'partner_left' || rematchingRef.current || showNoMatch) return;
@@ -1118,13 +1171,11 @@ export function CallApp({
     rematchingRef.current = true;
     setIsSkipping(true);
     setPartnerFeedReady(false);
-    clearRemoteMedia();
+    unsubscribePartner();
 
     const rematch = async () => {
       try {
-        await disconnect();
         if (cancelled) return;
-        await ensurePreview();
         startCall();
       } finally {
         rematchingRef.current = false;
@@ -1136,7 +1187,13 @@ export function CallApp({
     return () => {
       cancelled = true;
     };
-  }, [isCreatorRoom, phase, disconnect, startCall, clearRemoteMedia, ensurePreview, showNoMatch]);
+  }, [
+    isCreatorRoom,
+    phase,
+    startCall,
+    unsubscribePartner,
+    showNoMatch,
+  ]);
 
   // Local PiP while searching / between matches.
   // Keep preview alive until LiveKit actually takes the camera (onBeforeEnableCamera).
@@ -1147,8 +1204,8 @@ export function CallApp({
       stopPreview();
       return;
     }
-    if (isConnected && !isSkipping) {
-      // LiveKit owns the camera; preview already stopped in onBeforeEnableCamera
+    if (isConnected) {
+      // LiveKit owns the camera (including during skip — pool stays connected)
       return;
     }
     void ensurePreview();
@@ -1292,9 +1349,7 @@ export function CallApp({
     setPartnerFeedReady(false);
     setShowNoMatch(false);
     searchStartedAtRef.current = Date.now();
-    clearRemoteMedia();
-    await disconnect();
-    await ensurePreview();
+    unsubscribePartner();
     await leaveCall();
     startCall();
   };
@@ -1305,9 +1360,7 @@ export function CallApp({
     setIsSkipping(true);
     setPartnerFeedReady(false);
     searchStartedAtRef.current = Date.now();
-    clearRemoteMedia();
-    await disconnect();
-    await ensurePreview();
+    unsubscribePartner();
     startCall();
   };
 
@@ -1335,16 +1388,18 @@ export function CallApp({
           ? '✨ Connected!'
           : `Welcome, ${username}`;
 
+  const partnerDisplayName = match?.partnerIdentity ?? remoteIdentity;
+
   const partnerTitle = isCreatorRoom
-    ? partnerFeedReady && remoteIdentity
-      ? remoteIdentity
+    ? partnerFeedReady && partnerDisplayName
+      ? partnerDisplayName
       : phase === 'waiting'
         ? `Waiting for ${creatorName}…`
         : isConnected
           ? creatorName
           : `Joining ${creatorName}…`
-    : partnerFeedReady && remoteIdentity
-      ? remoteIdentity
+    : partnerFeedReady && partnerDisplayName
+      ? partnerDisplayName
       : isVerifying
         ? genderCheck.status === 'age_checking'
           ? 'Age verification…'
@@ -1384,12 +1439,13 @@ export function CallApp({
       className={`live-room ${mode}${isCreatorRoom ? ' creator-room' : ''}${isConnected ? ' is-connected' : ''}${showChat ? ' chat-open' : ''}`}
     >
       <header className="live-header">
-        <div>
+        <div className="live-header-brand">
           <img src="/assets/landing-bg-4.png" alt="" />
           <span>{isCreatorRoom ? `${creatorName}'s Room` : 'Rizz Roulette'}</span>
           <i className="connection-dot" style={{ opacity: 1 }} />
         </div>
         <div className="live-header-actions">
+          <CoinWalletChip variant="compact" className="live-header-coins" />
           <div className="live-header-top-btns">
             {!isCreatorRoom && (
               <button
@@ -1802,9 +1858,7 @@ export function CallApp({
             size={32}
             style={{
               opacity:
-                ((isConnected && !isSkipping) || hasPreview) && camEnabled
-                  ? 0
-                  : 0.5,
+                (isConnected || hasPreview) && camEnabled ? 0 : 0.5,
               zIndex: 1,
             }}
           />
@@ -1822,14 +1876,8 @@ export function CallApp({
               top: 0,
               left: 0,
               borderRadius: '20px',
-              zIndex:
-                camEnabled && hasPreview && (!isConnected || isSkipping)
-                  ? 10
-                  : -1,
-              opacity:
-                camEnabled && hasPreview && (!isConnected || isSkipping)
-                  ? 1
-                  : 0,
+              zIndex: camEnabled && hasPreview && !isConnected ? 10 : -1,
+              opacity: camEnabled && hasPreview && !isConnected ? 1 : 0,
             }}
           />
           <video
@@ -1845,13 +1893,13 @@ export function CallApp({
               top: 0,
               left: 0,
               borderRadius: '20px',
-              zIndex: camEnabled && isConnected && !isSkipping ? 10 : -1,
-              opacity: camEnabled && isConnected && !isSkipping ? 1 : 0,
+              zIndex: camEnabled && isConnected ? 10 : -1,
+              opacity: camEnabled && isConnected ? 1 : 0,
             }}
           />
           {!needsCameraTap &&
-            (((!isConnected || isSkipping) && (!hasPreview || !camEnabled)) ||
-              (isConnected && !isSkipping && !camEnabled)) && (
+            ((!isConnected && (!hasPreview || !camEnabled)) ||
+              (isConnected && !camEnabled)) && (
               <span className="live-self-label">
                 {camEnabled ? 'Your Camera' : 'Camera Off'}
               </span>
@@ -1948,7 +1996,21 @@ export function CallApp({
       >
         <div className="chat-panel-header">
           <span>Chat</span>
-          <CoinWalletChip variant="compact" />
+          <div className="chat-translate-wrap">
+            <Globe size={14} aria-hidden="true" />
+            <select
+              className="chat-translate-select"
+              value={chatTranslateLang}
+              onChange={(e) => onChatTranslateChange(e.target.value)}
+              aria-label="Translate incoming messages to"
+            >
+              {CHAT_TRANSLATE_OPTIONS.map((opt) => (
+                <option key={opt.value || 'off'} value={opt.value}>
+                  {opt.value ? opt.label : 'Translate: Off'}
+                </option>
+              ))}
+            </select>
+          </div>
           <button type="button" onClick={closeChat} aria-label="Close chat">
             <X size={16} />
           </button>
@@ -1967,7 +2029,10 @@ export function CallApp({
                 key={msg.id}
                 className={`chat-msg ${msg.from === 'you' ? 'you' : 'partner'}`}
               >
-                {msg.text}
+                <span className="chat-msg-text">{msg.text}</span>
+                {msg.translatedText && msg.translatedText !== msg.text && (
+                  <span className="chat-msg-translation">{msg.translatedText}</span>
+                )}
               </div>
             ))
           )}
@@ -2357,7 +2422,7 @@ export function CallApp({
           <ReportModal
             partnerName={match.partnerIdentity || remoteIdentity || 'partner'}
             partnerUserId={match.partnerUserId}
-            roomName={match.roomName}
+            roomName={match.sessionId}
             onClose={() => setShowReportModal(false)}
             onSubmitted={() => {
               setShowReportModal(false);

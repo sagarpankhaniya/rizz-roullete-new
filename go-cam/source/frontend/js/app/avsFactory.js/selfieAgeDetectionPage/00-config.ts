@@ -28,7 +28,7 @@ namespace AvsFactory {
 
 			public static MAX_TOTAL_FACE_EXPRESSION_SCAN_NUMBER = 150;
 
-			public static MIN_ALLOWED_AVERAGE_AGE = 25;
+			public static MIN_ALLOWED_AVERAGE_AGE = 18;
 
 			public static FACE_SCAN_INTERVAL_MS = 400;
 

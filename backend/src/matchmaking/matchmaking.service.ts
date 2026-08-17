@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Server } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { LivekitService } from '../livekit/livekit.service';
@@ -9,6 +10,7 @@ import { RedisKeys } from '../redis/redis.keys';
 import { ReportsService } from '../reports/reports.service';
 import {
   MatchedPayload,
+  WaitingPayload,
   WaitingUser,
 } from '../common/types/matching.types';
 import {
@@ -19,18 +21,26 @@ import {
 } from './compatibility.util';
 
 export interface ActiveCall {
+  /** Unique id for this 1:1 pairing (reports, chat archival) */
+  sessionId: string;
+  /** Shared LiveKit pool room — transport persists across skips */
   roomName: string;
+  livekitIdentityA: string;
+  livekitIdentityB: string;
   socketA: string;
   socketB: string;
   identityA: string;
   identityB: string;
   userIdA?: string;
   userIdB?: string;
+  isVipA?: boolean;
+  isVipB?: boolean;
 }
 
 export interface MatchResult {
   status: 'waiting' | 'matched';
   matches?: Array<{ socketId: string; payload: MatchedPayload }>;
+  waiting?: WaitingPayload;
 }
 
 export interface EnqueueInput {
@@ -151,6 +161,8 @@ return false
 export class MatchmakingService {
   private readonly logger = new Logger(MatchmakingService.name);
   private io: Server | null = null;
+  private readonly callDisconnectGraceSec: number;
+  private readonly graceTimers = new Map<string, NodeJS.Timeout>();
 
   /** All gender×preference buckets used for queue length / cleanup. */
   private static readonly ALL_BUCKETS = [
@@ -168,7 +180,11 @@ export class MatchmakingService {
     private readonly livekit: LivekitService,
     private readonly callSessions: CallSessionService,
     private readonly reports: ReportsService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.callDisconnectGraceSec =
+      this.config.get<number>('socket.callDisconnectGraceSec') ?? 30;
+  }
 
   /** Wired from MatchingGateway.afterInit so we can reject zombie Redis partners. */
   setServer(server: Server) {
@@ -205,6 +221,190 @@ export class MatchmakingService {
       );
       return null;
     }
+  }
+
+  async getActiveCallByUserId(userId: string): Promise<ActiveCall | null> {
+    if (!userId) return null;
+    const key = this.redis.key(RedisKeys.activeCallUser(userId));
+    const raw = await this.redis.getClient().get(key);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as ActiveCall;
+    } catch (error) {
+      this.logger.error(
+        `Corrupt active call data for user ${userId}`,
+        (error as Error).stack,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Socket dropped mid-call — keep LiveKit + partner paired for a grace window
+   * so mobile/network blips do not skip both users.
+   */
+  async beginDisconnectGrace(
+    userId: string,
+    socketId: string,
+  ): Promise<boolean> {
+    const call = await this.getActiveCall(socketId);
+    if (!call) {
+      return false;
+    }
+
+    const ownsCall =
+      (call.userIdA && call.userIdA === userId && call.socketA === socketId) ||
+      (call.userIdB && call.userIdB === userId && call.socketB === socketId);
+    if (!ownsCall) {
+      return false;
+    }
+
+    const graceKey = this.redis.key(RedisKeys.callGrace(userId));
+    await this.redis
+      .getClient()
+      .set(graceKey, socketId, 'EX', this.callDisconnectGraceSec);
+
+    this.clearGraceTimer(userId);
+    const timer = setTimeout(() => {
+      void this.finalizeGraceDisconnect(userId);
+    }, this.callDisconnectGraceSec * 1000);
+    this.graceTimers.set(userId, timer);
+
+    this.logger.log(
+      `Call grace started for user ${userId} (socket ${socketId}, ${this.callDisconnectGraceSec}s)`,
+    );
+    return true;
+  }
+
+  private clearGraceTimer(userId: string): void {
+    const existing = this.graceTimers.get(userId);
+    if (existing) {
+      clearTimeout(existing);
+      this.graceTimers.delete(userId);
+    }
+  }
+
+  async cancelDisconnectGrace(userId: string): Promise<void> {
+    this.clearGraceTimer(userId);
+    await this.redis
+      .getClient()
+      .del(this.redis.key(RedisKeys.callGrace(userId)));
+  }
+
+  async finalizeGraceDisconnect(
+    userId: string,
+  ): Promise<{ partnerSocketId?: string; roomName?: string }> {
+    const graceKey = this.redis.key(RedisKeys.callGrace(userId));
+    const oldSocketId = await this.redis.getClient().get(graceKey);
+    if (!oldSocketId) {
+      return {};
+    }
+
+    await this.cancelDisconnectGrace(userId);
+    this.logger.log(
+      `Call grace expired for user ${userId}; ending call (socket ${oldSocketId})`,
+    );
+    return this.handleDisconnect(oldSocketId, 'partner_disconnected');
+  }
+
+  /** Re-bind a reconnected socket to an in-progress call and mint a fresh token. */
+  async tryResumeActiveCall(
+    userId: string,
+    newSocketId: string,
+  ): Promise<MatchedPayload | null> {
+    const graceKey = this.redis.key(RedisKeys.callGrace(userId));
+    const inGrace = (await this.redis.getClient().exists(graceKey)) === 1;
+    if (!inGrace) {
+      return null;
+    }
+
+    const call = await this.getActiveCallByUserId(userId);
+    if (!call) {
+      await this.cancelDisconnectGrace(userId);
+      return null;
+    }
+
+    const isA = call.userIdA === userId;
+    const isB = call.userIdB === userId;
+    if (!isA && !isB) {
+      await this.cancelDisconnectGrace(userId);
+      return null;
+    }
+
+    const oldSocketId = isA ? call.socketA : call.socketB;
+    const identity = isA ? call.identityA : call.identityB;
+    const partnerIdentity = isA ? call.identityB : call.identityA;
+    const partnerIsVip = isA ? Boolean(call.isVipB) : Boolean(call.isVipA);
+    const partnerUserId = isA ? call.userIdB || null : call.userIdA || null;
+
+    const updatedCall: ActiveCall = {
+      ...call,
+      ...(isA ? { socketA: newSocketId } : { socketB: newSocketId }),
+    };
+
+    await this.rebindActiveCall(oldSocketId, updatedCall);
+    await this.cancelDisconnectGrace(userId);
+    await this.presence.setOnline(newSocketId, identity);
+    await this.presence.setStatus(newSocketId, 'in_call');
+
+    const livekitIdentity = isA ? call.livekitIdentityA : call.livekitIdentityB;
+    const partnerLivekitIdentity = isA
+      ? call.livekitIdentityB
+      : call.livekitIdentityA;
+
+    const token = await this.livekit.createAccessToken(
+      livekitIdentity,
+      call.roomName,
+    );
+    const livekitUrl = this.livekit.getClientUrl();
+
+    this.logger.log(
+      `Resumed call ${call.sessionId} for user ${userId} on socket ${newSocketId}`,
+    );
+
+    return {
+      sessionId: call.sessionId,
+      roomName: call.roomName,
+      livekitUrl,
+      token,
+      livekitIdentity,
+      identity,
+      partnerIdentity,
+      partnerLivekitIdentity,
+      partnerIsVip,
+      partnerUserId,
+    };
+  }
+
+  private async rebindActiveCall(
+    oldSocketId: string,
+    call: ActiveCall,
+  ): Promise<void> {
+    const client = this.redis.getClient();
+    const payload = JSON.stringify(call);
+    const pipeline = client.pipeline();
+    pipeline.del(this.redis.key(RedisKeys.activeCall(oldSocketId)));
+    pipeline.set(
+      this.redis.key(RedisKeys.activeCall(call.socketA)),
+      payload,
+    );
+    pipeline.set(
+      this.redis.key(RedisKeys.activeCall(call.socketB)),
+      payload,
+    );
+    if (call.userIdA) {
+      pipeline.set(
+        this.redis.key(RedisKeys.activeCallUser(call.userIdA)),
+        payload,
+      );
+    }
+    if (call.userIdB) {
+      pipeline.set(
+        this.redis.key(RedisKeys.activeCallUser(call.userIdB)),
+        payload,
+      );
+    }
+    await pipeline.exec();
   }
 
   async removeFromQueue(socketId: string): Promise<void> {
@@ -288,7 +488,11 @@ export class MatchmakingService {
 
     if (await this.isWaiting(socketId)) {
       this.logger.warn(`Ignoring duplicate creator enqueue for ${socketId}`);
-      return { status: 'waiting' };
+      return this.buildWaitingResult(
+        socketId,
+        userId || undefined,
+        'Already waiting for the creator…',
+      );
     }
 
     if (await this.isInCall(socketId)) {
@@ -356,7 +560,11 @@ export class MatchmakingService {
     this.logger.log(
       `Fan ${identity} waiting for creator ${targetCreatorUserId}`,
     );
-    return { status: 'waiting' };
+    return this.buildWaitingResult(
+      socketId,
+      userId || undefined,
+      'Waiting for the creator to join their room…',
+    );
   }
 
   /** Creator goes live — pair with the next fan waiting for this room. */
@@ -440,7 +648,11 @@ export class MatchmakingService {
 
     if (await this.isWaiting(socketId)) {
       this.logger.warn(`Ignoring duplicate enqueue for ${socketId}`);
-      return { status: 'waiting' };
+      return this.buildWaitingResult(
+        socketId,
+        userId || undefined,
+        'Already in the waiting queue…',
+      );
     }
 
     // Allow rejoin after leave/skip even if active-call keys haven't cleared yet
@@ -496,7 +708,11 @@ export class MatchmakingService {
       this.logger.log(
         `User ${identity} (${gender}→${interestedIn}) waiting. Queue size=${size}`,
       );
-      return { status: 'waiting' };
+      return this.buildWaitingResult(
+        socketId,
+        userId || undefined,
+        'Waiting for a matching user…',
+      );
     }
 
     // Matched — clear our waiting metadata (partner hash cleared below)
@@ -527,7 +743,11 @@ export class MatchmakingService {
         isVip,
         userId: userId || undefined,
       });
-      return { status: 'waiting' };
+      return this.buildWaitingResult(
+        socketId,
+        userId || undefined,
+        'Waiting for a matching user…',
+      );
     }
 
     // Defense in depth — should already be guaranteed by Lua
@@ -551,7 +771,11 @@ export class MatchmakingService {
         isVip,
         userId: userId || undefined,
       });
-      return { status: 'waiting' };
+      return this.buildWaitingResult(
+        socketId,
+        userId || undefined,
+        'Waiting for a matching user…',
+      );
     }
 
     // Skip partners blocked by a prior misconduct report (either direction)
@@ -669,25 +893,39 @@ export class MatchmakingService {
     userA: WaitingUser,
     userB: WaitingUser,
   ): Promise<Array<{ socketId: string; payload: MatchedPayload }>> {
-    const roomName = `call-${uuidv4()}`;
+    const sessionId = `call-${uuidv4()}`;
+    await this.livekit.ensurePoolRoom();
+    const roomName = this.livekit.getPoolRoomName();
 
-    await this.livekit.createRoom(roomName);
+    const livekitIdentityA = this.livekit.toParticipantIdentity(
+      userA.userId,
+      userA.socketId,
+    );
+    const livekitIdentityB = this.livekit.toParticipantIdentity(
+      userB.userId,
+      userB.socketId,
+    );
 
     const [tokenA, tokenB] = await Promise.all([
-      this.livekit.createAccessToken(userA.identity, roomName),
-      this.livekit.createAccessToken(userB.identity, roomName),
+      this.livekit.createAccessToken(livekitIdentityA, roomName),
+      this.livekit.createAccessToken(livekitIdentityB, roomName),
     ]);
 
     const livekitUrl = this.livekit.getClientUrl();
 
     const call: ActiveCall = {
+      sessionId,
       roomName,
+      livekitIdentityA,
+      livekitIdentityB,
       socketA: userA.socketId,
       socketB: userB.socketId,
       identityA: userA.identity,
       identityB: userB.identity,
       userIdA: userA.userId || '',
       userIdB: userB.userId || '',
+      isVipA: Boolean(userA.isVip),
+      isVipB: Boolean(userB.isVip),
     };
 
     await this.storeActiveCall(call);
@@ -697,26 +935,29 @@ export class MatchmakingService {
     ]);
 
     void this.callSessions
-      .createSession(roomName, userA.identity, userB.identity)
+      .createSession(sessionId, userA.identity, userB.identity)
       .catch((err: Error) =>
         this.logger.error(
-          `Failed to persist call session ${roomName}: ${err.message}`,
+          `Failed to persist call session ${sessionId}: ${err.message}`,
         ),
       );
 
     this.logger.log(
-      `Matched ${userA.identity} (${userA.gender}→${userA.interestedIn}) ↔ ${userB.identity} (${userB.gender}→${userB.interestedIn}) → room ${roomName}`,
+      `Matched ${userA.identity} (${userA.gender}→${userA.interestedIn}) ↔ ${userB.identity} (${userB.gender}→${userB.interestedIn}) → session ${sessionId} in pool ${roomName}`,
     );
 
     return [
       {
         socketId: userA.socketId,
         payload: {
+          sessionId,
           roomName,
           livekitUrl,
           token: tokenA,
+          livekitIdentity: livekitIdentityA,
           identity: userA.identity,
           partnerIdentity: userB.identity,
+          partnerLivekitIdentity: livekitIdentityB,
           partnerIsVip: Boolean(userB.isVip),
           partnerUserId: userB.userId || null,
         },
@@ -724,16 +965,53 @@ export class MatchmakingService {
       {
         socketId: userB.socketId,
         payload: {
+          sessionId,
           roomName,
           livekitUrl,
           token: tokenB,
+          livekitIdentity: livekitIdentityB,
           identity: userB.identity,
           partnerIdentity: userA.identity,
+          partnerLivekitIdentity: livekitIdentityA,
           partnerIsVip: Boolean(userA.isVip),
           partnerUserId: userA.userId || null,
         },
       },
     ];
+  }
+
+  private async issuePoolCredentials(
+    socketId: string,
+    userId: string | undefined,
+  ): Promise<Omit<WaitingPayload, 'message'>> {
+    await this.livekit.ensurePoolRoom();
+    const roomName = this.livekit.getPoolRoomName();
+    const livekitIdentity = this.livekit.toParticipantIdentity(
+      userId,
+      socketId,
+    );
+    const token = await this.livekit.createAccessToken(
+      livekitIdentity,
+      roomName,
+    );
+    return {
+      roomName,
+      livekitUrl: this.livekit.getClientUrl(),
+      token,
+      livekitIdentity,
+    };
+  }
+
+  private async buildWaitingResult(
+    socketId: string,
+    userId: string | undefined,
+    message: string,
+  ): Promise<MatchResult> {
+    const creds = await this.issuePoolCredentials(socketId, userId);
+    return {
+      status: 'waiting',
+      waiting: { message, ...creds },
+    };
   }
 
   private async storeActiveCall(call: ActiveCall): Promise<void> {
@@ -748,6 +1026,18 @@ export class MatchmakingService {
       this.redis.key(RedisKeys.activeCall(call.socketB)),
       payload,
     );
+    if (call.userIdA) {
+      pipeline.set(
+        this.redis.key(RedisKeys.activeCallUser(call.userIdA)),
+        payload,
+      );
+    }
+    if (call.userIdB) {
+      pipeline.set(
+        this.redis.key(RedisKeys.activeCallUser(call.userIdB)),
+        payload,
+      );
+    }
     await pipeline.exec();
   }
 
@@ -756,6 +1046,14 @@ export class MatchmakingService {
     const pipeline = client.pipeline();
     pipeline.del(this.redis.key(RedisKeys.activeCall(call.socketA)));
     pipeline.del(this.redis.key(RedisKeys.activeCall(call.socketB)));
+    if (call.userIdA) {
+      pipeline.del(this.redis.key(RedisKeys.activeCallUser(call.userIdA)));
+      pipeline.del(this.redis.key(RedisKeys.callGrace(call.userIdA)));
+    }
+    if (call.userIdB) {
+      pipeline.del(this.redis.key(RedisKeys.activeCallUser(call.userIdB)));
+      pipeline.del(this.redis.key(RedisKeys.callGrace(call.userIdB)));
+    }
     await pipeline.exec();
   }
 
@@ -783,26 +1081,28 @@ export class MatchmakingService {
     await this.presence.setStatus(partnerSocketId, 'online');
 
     try {
-      await this.callSessions.endSession(call.roomName, reason);
+      await this.callSessions.endSession(call.sessionId, reason);
     } catch (error) {
       this.logger.error(
-        `Failed to end call session ${call.roomName}: ${(error as Error).message}`,
+        `Failed to end call session ${call.sessionId}: ${(error as Error).message}`,
       );
     }
 
-    try {
-      await this.livekit.deleteRoom(call.roomName);
-    } catch (error) {
-      this.logger.warn(
-        `LiveKit room cleanup failed for ${call.roomName}: ${(error as Error).message}`,
-      );
+    if (!this.livekit.isPoolRoom(call.roomName)) {
+      try {
+        await this.livekit.deleteRoom(call.roomName);
+      } catch (error) {
+        this.logger.warn(
+          `LiveKit room cleanup failed for ${call.roomName}: ${(error as Error).message}`,
+        );
+      }
     }
 
     this.logger.log(
-      `Call ${call.roomName} ended (${reason}). Partner=${partnerSocketId}`,
+      `Call ${call.sessionId} ended (${reason}). Partner=${partnerSocketId}`,
     );
 
-    return { partnerSocketId, roomName: call.roomName };
+    return { partnerSocketId, roomName: call.sessionId };
   }
 
   async getQueueLength(): Promise<number> {

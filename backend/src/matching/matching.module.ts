@@ -9,6 +9,7 @@ import { GenderVerificationModule } from '../gender-verification/gender-verifica
 import { AgeVerificationModule } from '../age-verification/age-verification.module';
 import { CoinsModule } from '../coins/coins.module';
 import { ChatModule } from '../chat/chat.module';
+import { TranslationModule } from '../translation/translation.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ChatModule } from '../chat/chat.module';
     AgeVerificationModule,
     CoinsModule,
     ChatModule,
+    TranslationModule,
   ],
   providers: [MatchingGateway],
 })

@@ -23,12 +23,14 @@ import { GenderVerificationService } from '../gender-verification/gender-verific
 import { AgeVerificationService } from '../age-verification/age-verification.service';
 import { CoinsService } from '../coins/coins.service';
 import { ChatArchiveService } from '../chat/chat-archive.service';
+import { TranslationService } from '../translation/translation.service';
 import {
   ChatMessagePayload,
   PartnerLeftPayload,
   SOCKET_EVENTS,
   SendChatPayload,
   SendTipPayload,
+  SetChatTranslatePayload,
   StartCallPayload,
   TipReceivedPayload,
 } from '../common/types/matching.types';
@@ -55,6 +57,8 @@ type SocketUser = {
     ],
     credentials: true,
   },
+  pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT_MS ?? '60000', 10),
+  pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL_MS ?? '25000', 10),
 })
 export class MatchingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
@@ -76,6 +80,7 @@ export class MatchingGateway
     private readonly ageVerification: AgeVerificationService,
     private readonly coinsService: CoinsService,
     private readonly chatArchive: ChatArchiveService,
+    private readonly translation: TranslationService,
   ) {}
 
   afterInit(server: Server) {
@@ -105,6 +110,19 @@ export class MatchingGateway
         client.data.user = user;
         await this.presence.updateIdentity(client.id, user.identity);
         await this.presence.setUserSocket(user.userId, client.id);
+
+        const resumed = await this.matchmaking.tryResumeActiveCall(
+          user.userId,
+          client.id,
+        );
+        if (resumed) {
+          client.emit(SOCKET_EVENTS.CALL_RESUMED, resumed);
+          this.logger.log(
+            `Socket reconnected into active call: ${client.id} user=${user.userId}`,
+          );
+          return;
+        }
+
         this.logger.log(
           `Socket connected: ${client.id} user=${user.userId} (${user.gender}→${user.interestedIn})`,
         );
@@ -125,6 +143,17 @@ export class MatchingGateway
       const user = client.data.user as SocketUser | undefined;
       if (user?.userId) {
         await this.presence.clearUserSocket(user.userId);
+        const graced = await this.matchmaking.beginDisconnectGrace(
+          user.userId,
+          client.id,
+        );
+        if (graced) {
+          await this.presence.setOffline(client.id);
+          this.logger.log(
+            `Socket ${client.id} in call grace — deferring partner_left`,
+          );
+          return;
+        }
       }
       await this.notifyPartnerLeft(client.id, 'partner_disconnected');
       await this.presence.setOffline(client.id);
@@ -214,10 +243,14 @@ export class MatchingGateway
       });
 
       if (result.status === 'waiting') {
-        const waitingMessage = targetCreatorUserId
-          ? 'Waiting for the creator to join their room…'
-          : 'Waiting for a matching user…';
-        client.emit(SOCKET_EVENTS.WAITING, { message: waitingMessage });
+        const waitingPayload =
+          result.waiting ??
+          ({
+            message: targetCreatorUserId
+              ? 'Waiting for the creator to join their room…'
+              : 'Waiting for a matching user…',
+          } as const);
+        client.emit(SOCKET_EVENTS.WAITING, waitingPayload);
 
         if (targetCreatorUserId) {
           const creatorSocketId =
@@ -280,6 +313,27 @@ export class MatchingGateway
   }
 
   /** Ephemeral in-call chat — relay to partner; archival is async via Redis queue. */
+  @SubscribeMessage(SOCKET_EVENTS.SET_CHAT_TRANSLATE)
+  onSetChatTranslate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body?: SetChatTranslatePayload,
+  ) {
+    const raw = body?.language;
+    if (raw === null || raw === undefined || raw === '') {
+      client.data.chatTranslateTo = null;
+      return { ok: true, enabled: false };
+    }
+
+    const normalized = this.translation.normalizeLanguageCode(raw);
+    if (!normalized) {
+      return { ok: false };
+    }
+
+    client.data.chatTranslateTo = normalized;
+    return { ok: true, enabled: true, language: normalized };
+  }
+
+  /** Ephemeral in-call chat — relay to partner; archival is async via Redis queue. */
   @SubscribeMessage(SOCKET_EVENTS.SEND_CHAT)
   async onSendChat(
     @ConnectedSocket() client: Socket,
@@ -307,16 +361,33 @@ export class MatchingGateway
       const recipientUserId = isSenderA ? call.userIdB : call.userIdA;
       const sentAt = Date.now();
 
+      const partnerSocket = this.server.sockets.sockets.get(partnerSocketId);
+      const partnerLang = partnerSocket?.data?.chatTranslateTo as
+        | string
+        | undefined;
+
+      let translatedText: string | undefined;
+      let detectedLanguage: string | undefined;
+
+      if (partnerLang) {
+        const result = await this.translation.translate(text, partnerLang);
+        if (result) {
+          translatedText = result.translatedText;
+          detectedLanguage = result.detectedLanguage;
+        }
+      }
+
       const payload: ChatMessagePayload = {
         text,
         fromIdentity,
         sentAt,
+        ...(translatedText ? { translatedText, detectedLanguage } : {}),
       };
 
       this.server.to(partnerSocketId).emit(SOCKET_EVENTS.CHAT_MESSAGE, payload);
 
       this.chatArchive.enqueue({
-        roomName: call.roomName,
+        roomName: call.sessionId,
         senderUserId: senderUserId || null,
         senderIdentity: fromIdentity,
         recipientUserId: recipientUserId || null,

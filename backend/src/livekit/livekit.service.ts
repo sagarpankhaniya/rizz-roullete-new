@@ -33,6 +33,8 @@ export class LivekitService implements OnModuleInit {
   private apiHost!: string;
   private roomEmptyTimeout!: number;
   private maxParticipants!: number;
+  private poolRoomName!: string;
+  private poolMaxParticipants!: number;
   private tokenTtl!: string;
 
   constructor(private readonly config: ConfigService) {}
@@ -46,6 +48,10 @@ export class LivekitService implements OnModuleInit {
       this.config.get<number>('livekit.roomEmptyTimeout') ?? 300;
     this.maxParticipants =
       this.config.get<number>('livekit.maxParticipants') ?? 2;
+    this.poolRoomName =
+      this.config.get<string>('livekit.poolRoomName') ?? 'match-pool';
+    this.poolMaxParticipants =
+      this.config.get<number>('livekit.poolMaxParticipants') ?? 500;
     this.tokenTtl = this.config.get<string>('livekit.tokenTtl') ?? '2h';
 
     this.roomService = new RoomServiceClient(
@@ -62,6 +68,41 @@ export class LivekitService implements OnModuleInit {
   /** Client WebSocket URL — included in the `matched` Socket.IO payload. */
   getClientUrl(): string {
     return this.livekitUrl;
+  }
+
+  getPoolRoomName(): string {
+    return this.poolRoomName;
+  }
+
+  isPoolRoom(roomName: string): boolean {
+    return roomName === this.poolRoomName;
+  }
+
+  /** Stable LiveKit identity — display names can collide in the shared pool. */
+  toParticipantIdentity(userId: string | undefined, socketId: string): string {
+    const trimmed = userId?.trim();
+    return trimmed ? `u-${trimmed}` : `s-${socketId}`;
+  }
+
+  async ensurePoolRoom(): Promise<void> {
+    try {
+      await this.roomService.createRoom({
+        name: this.poolRoomName,
+        emptyTimeout: this.roomEmptyTimeout,
+        maxParticipants: this.poolMaxParticipants,
+      });
+      this.logger.log(`Ensured LiveKit pool room: ${this.poolRoomName}`);
+    } catch (error) {
+      const message = (error as Error).message ?? '';
+      if (/already exists|duplicate/i.test(message)) {
+        return;
+      }
+      this.logger.error(
+        `Failed to ensure pool room ${this.poolRoomName}: ${message}`,
+        (error as Error).stack,
+      );
+      throw error;
+    }
   }
 
   async createRoom(roomName: string): Promise<void> {

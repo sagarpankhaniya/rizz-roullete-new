@@ -28,17 +28,32 @@ export interface StartCallPayload {
   targetCreatorUserId?: string;
 }
 
-export interface MatchedPayload {
+export interface LiveKitCredentialsPayload {
   roomName: string;
   /** LiveKit WebSocket URL for the client SDK (LIVEKIT_URL) */
   livekitUrl: string;
   token: string;
+  /** Stable LiveKit participant identity (not the display name) */
+  livekitIdentity: string;
+}
+
+export interface MatchedPayload extends LiveKitCredentialsPayload {
+  /** Unique id for this 1:1 pairing — used for reports/chat archival */
+  sessionId: string;
+  /** Display name for this participant */
   identity: string;
+  /** Display name of the remote partner */
   partnerIdentity: string;
+  /** LiveKit identity of the remote partner — used for selective subscription */
+  partnerLivekitIdentity: string;
   /** Whether the remote partner has creator VIP */
   partnerIsVip: boolean;
   /** Mongo user id of the remote partner (for reporting) */
   partnerUserId: string | null;
+}
+
+export interface WaitingPayload extends LiveKitCredentialsPayload {
+  message: string;
 }
 
 export interface PartnerLeftPayload {
@@ -53,6 +68,14 @@ export interface ChatMessagePayload {
   text: string;
   fromIdentity: string;
   sentAt: number;
+  /** Present when the server translated for the recipient's language preference */
+  translatedText?: string;
+  detectedLanguage?: string;
+}
+
+export interface SetChatTranslatePayload {
+  /** BCP-47 code, or null / empty string to disable */
+  language: string | null;
 }
 
 export interface SendTipPayload {
@@ -81,12 +104,16 @@ export const SOCKET_EVENTS = {
   LEAVE_CALL: 'leave_call',
   /** Client → server: ephemeral in-call chat (not persisted) */
   SEND_CHAT: 'send_chat',
+  /** Client → server: set preferred language for incoming chat translations */
+  SET_CHAT_TRANSLATE: 'set_chat_translate',
   /** Client → server: tip the current partner (VIP creator) */
   SEND_TIP: 'send_tip',
   /** Server → client: waiting for another user */
   WAITING: 'waiting',
   /** Server → client: matched; includes LiveKit credentials */
   MATCHED: 'matched',
+  /** Server → client: socket reconnected — same room + fresh LiveKit token */
+  CALL_RESUMED: 'call_resumed',
   /** Server → client: partner disconnected */
   PARTNER_LEFT: 'partner_left',
   /** Server → client: ephemeral chat message from partner */

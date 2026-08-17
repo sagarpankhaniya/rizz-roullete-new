@@ -34,10 +34,10 @@ namespace AvsFactory {
 				let detectedAgeString = label + ': ';
 
 				if (age >= Config.MIN_ALLOWED_AVERAGE_AGE) {
-					detectedAgeString += 'Adult';
+					detectedAgeString += '18+';
 				}
 				else {
-					detectedAgeString += 'Minor';
+					detectedAgeString += 'Under 18';
 				}
 
 				if ((<any>Application).showDetectedAgeNumber) {
@@ -75,7 +75,7 @@ namespace AvsFactory {
 							instance.ui.SelfieAgeDetectionCurrentAgeArea.setContent(
 								Method.getAgeAreaString(
 									'Current detected age',
-									ageResult.age.toFixed()
+									Math.round(ageResult.age)
 								)
 							);
 

@@ -2,12 +2,18 @@
  * Socket.IO event contracts — keep in sync with backend matching.types.ts
  */
 
-export interface MatchedPayload {
+export interface LiveKitCredentials {
   roomName: string;
   livekitUrl: string;
   token: string;
+  livekitIdentity: string;
+}
+
+export interface MatchedPayload extends LiveKitCredentials {
+  sessionId: string;
   identity: string;
   partnerIdentity: string;
+  partnerLivekitIdentity: string;
   partnerIsVip: boolean;
   /** Mongo user id of the remote partner (for reporting) */
   partnerUserId: string | null;
@@ -21,7 +27,7 @@ export interface ErrorPayload {
   message: string;
 }
 
-export interface WaitingPayload {
+export interface WaitingPayload extends LiveKitCredentials {
   message: string;
 }
 
@@ -42,6 +48,12 @@ export interface ChatMessagePayload {
   text: string;
   fromIdentity: string;
   sentAt: number;
+  translatedText?: string;
+  detectedLanguage?: string;
+}
+
+export interface SetChatTranslatePayload {
+  language: string | null;
 }
 
 export interface SendTipPayload {
@@ -65,9 +77,11 @@ export const SOCKET_EVENTS = {
   START_CALL: 'start_call',
   LEAVE_CALL: 'leave_call',
   SEND_CHAT: 'send_chat',
+  SET_CHAT_TRANSLATE: 'set_chat_translate',
   SEND_TIP: 'send_tip',
   WAITING: 'waiting',
   MATCHED: 'matched',
+  CALL_RESUMED: 'call_resumed',
   PARTNER_LEFT: 'partner_left',
   CHAT_MESSAGE: 'chat_message',
   TIP_RECEIVED: 'tip_received',

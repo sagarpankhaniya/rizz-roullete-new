@@ -880,6 +880,58 @@ h1 {
   box-shadow: 0 32px 95px rgba(255, 43, 120, 0.22), 0 28px 70px rgba(0, 0, 0, 0.55);
 }
 
+/* ── Solid Flow Modal (login, signup, purchases) ─────────────── */
+
+.flow-backdrop-solid {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 43, 120, 0.18), transparent 28%),
+    radial-gradient(circle at 78% 78%, rgba(120, 0, 60, 0.28), transparent 32%),
+    rgba(8, 2, 10, 0.78);
+}
+
+.flow-panel-solid {
+  background: linear-gradient(
+    160deg,
+    rgba(34, 10, 28, 0.98) 0%,
+    rgba(16, 4, 14, 0.99) 100%
+  );
+  border: 1px solid rgba(255, 90, 150, 0.42);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 45, 122, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.flow-panel-solid .flow-screen input,
+.flow-panel-solid .flow-screen select,
+.flow-panel-solid .form-grid select {
+  background: rgba(0, 0, 0, 0.32);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.flow-panel-solid .flow-screen input:focus,
+.flow-panel-solid .flow-screen select:focus,
+.flow-panel-solid .form-grid select:focus {
+  background: rgba(0, 0, 0, 0.42);
+  border-color: rgba(255, 90, 150, 0.55);
+}
+
+.flow-panel-solid .plan-grid button {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.flow-panel-solid .plan-grid button:hover {
+  background: rgba(255, 45, 122, 0.14);
+}
+
+.flow-panel-solid .plan-grid button.selected {
+  background: rgba(255, 45, 122, 0.2);
+  box-shadow: 0 0 24px rgba(255, 45, 122, 0.35);
+}
+
 /* ── Flow Top / Live Header ──────────────────────────────────── */
 
 .flow-top,
@@ -911,7 +963,7 @@ h1 {
 }
 
 .flow-top button,
-.live-header button:not(.creator-deck-link) {
+.live-header button:not(.creator-deck-link):not(.coin-wallet-buy) {
   display: grid;
   place-items: center;
   width: 42px;
@@ -925,13 +977,13 @@ h1 {
 }
 
 .flow-top button:hover,
-.live-header button:not(.creator-deck-link):hover {
+.live-header button:not(.creator-deck-link):not(.coin-wallet-buy):hover {
   transform: scale(1.1);
   background: rgba(255, 255, 255, 0.3);
 }
 
 .flow-top button:active,
-.live-header button:not(.creator-deck-link):active {
+.live-header button:not(.creator-deck-link):not(.coin-wallet-buy):active {
   transform: scale(0.93);
 }
 
@@ -1254,7 +1306,7 @@ h1 {
   -webkit-backdrop-filter: blur(24px);
 }
 
-.live-header div:first-child {
+.live-header-brand {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -1262,7 +1314,14 @@ h1 {
   font-weight: 700;
   font-size: 13px;
   min-width: 0;
-  flex-shrink: 1;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.live-header-brand span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live-header-actions {
@@ -1277,6 +1336,21 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 9px;
+}
+
+.live-header-coins {
+  flex-shrink: 0;
+}
+
+.live-header-coins .coin-wallet-buy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .session-loading {
@@ -1444,7 +1518,7 @@ h1 {
   display: inline-block;
 }
 
-.live-header button:not(.creator-deck-link) {
+.live-header button:not(.creator-deck-link):not(.coin-wallet-buy) {
   display: grid;
   width: 38px;
   height: 38px;
@@ -1456,7 +1530,7 @@ h1 {
   transition: all 260ms ease;
 }
 
-.live-header button:not(.creator-deck-link):hover {
+.live-header button:not(.creator-deck-link):not(.coin-wallet-buy):hover {
   transform: scale(1.08);
   background: rgba(255, 255, 255, 0.14);
 }
@@ -2627,6 +2701,43 @@ h1 {
   color: #fff0f7 !important;
 }
 
+.chat-translate-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 4px;
+  color: rgba(255, 240, 247, 0.65);
+}
+
+.chat-translate-select {
+  max-width: 148px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  color: #fff0f7;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.chat-translate-select:focus {
+  outline: none;
+  border-color: rgba(255, 45, 122, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 45, 122, 0.18);
+}
+
+.chat-translate-select option {
+  color: #1a0a14;
+  background: #fff;
+}
+
 .creator-earnings-strip {
   display: flex;
   flex-wrap: wrap;
@@ -2699,6 +2810,28 @@ h1 {
   font-size: 14px;
   line-height: 1.4;
   animation: dropdownSlide 200ms ease both;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-msg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-msg-translation {
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.88;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-msg.you .chat-msg-translation {
+  border-top-color: rgba(255, 255, 255, 0.22);
 }
 
 .chat-msg.you {
@@ -3211,6 +3344,16 @@ h1 {
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.55) 0%, transparent 100%);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    gap: 8px;
+  }
+
+  .live-header-brand {
+    flex: 0 0 auto;
+  }
+
+  .live-header-brand span,
+  .live-header-brand .connection-dot {
+    display: none;
   }
 
   .live-header-top-btns {
@@ -3218,6 +3361,20 @@ h1 {
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+  }
+
+  .live-header-coins .coin-wallet-chip.compact {
+    gap: 5px;
+    padding: 3px 5px 3px 7px;
+  }
+
+  .live-header-coins .coin-wallet-label {
+    display: none;
+  }
+
+  .live-header-coins .coin-wallet-buy {
+    padding: 4px 8px;
+    font-size: 11px;
   }
 
   .live-header .creator-deck-link {

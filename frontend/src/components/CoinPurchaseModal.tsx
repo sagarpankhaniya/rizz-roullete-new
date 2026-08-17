@@ -67,8 +67,8 @@ export function CoinPurchaseModal({ onClose, onSuccess }: CoinPurchaseModalProps
   };
 
   return createPortal(
-    <section className="flow-backdrop rizz-page moderated" aria-hidden="false">
-      <div className="flow-panel" role="dialog" aria-modal="true" style={{ maxWidth: 480 }}>
+    <section className="flow-backdrop flow-backdrop-solid rizz-page moderated" aria-hidden="false">
+      <div className="flow-panel flow-panel-solid" role="dialog" aria-modal="true" style={{ maxWidth: 480 }}>
         <div className="flow-top">
           <span>Buy A Boost!</span>
           <button type="button" onClick={onClose} aria-label="Close">
@@ -95,11 +95,8 @@ export function CoinPurchaseModal({ onClose, onSuccess }: CoinPurchaseModalProps
                     flexDirection: 'column',
                     alignItems: 'center',
                     padding: '16px',
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '12px',
                     textAlign: 'center',
-                    transition: 'all 0.2s'
                   }}
                 >
                   <div style={{ position: 'relative', marginBottom: '12px' }}>
@@ -228,15 +225,22 @@ export function CoinPurchaseModal({ onClose, onSuccess }: CoinPurchaseModalProps
       </div>
 
       <style>{`
+        .coin-pack-card {
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+        }
+
         .coin-pack-card:hover {
           transform: translateY(-4px);
-          border-color: #FF2D7A !important;
-          background: rgba(255, 45, 122, 0.1) !important;
+          border-color: #ff2d7a;
+          background: rgba(255, 45, 122, 0.14);
         }
+
         .coin-pack-card.selected {
-          border-color: #FF2D7A !important;
-          background: rgba(255, 45, 122, 0.15) !important;
-          box-shadow: 0 0 20px rgba(255, 45, 122, 0.3);
+          border-color: #ff2d7a;
+          background: rgba(255, 45, 122, 0.2);
+          box-shadow: 0 0 24px rgba(255, 45, 122, 0.35);
         }
       `}</style>
     </section>,
