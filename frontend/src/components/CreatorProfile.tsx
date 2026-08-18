@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  clearPendingCreator,
   fetchCreatorById,
   storeCreatorRoom,
   storePendingCreator,
@@ -52,6 +53,7 @@ export function CreatorProfile() {
 
   useEffect(() => {
     if (!getToken()) return;
+    clearPendingCreator();
     getCoinBalance().then((res) => setBalance(res.balance));
   }, []);
 

@@ -1,8 +1,8 @@
 import { X } from 'lucide-react';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams } from 'react-router-dom';
-import { authHeaders, clearToken, setToken } from '../utils/auth';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { authHeaders, clearToken, getToken, setToken } from '../utils/auth';
 import { apiUrl } from '../utils/api';
 import { UnbanRequestModal } from './UnbanRequestModal';
 
@@ -724,11 +724,12 @@ function SignupPanel({
 export type LandingPageProps = {
   mode: RoomMode;
   onModeChange: (mode: RoomMode) => void;
-  onRegister?: (user: unknown, token: string) => void;
+  onRegister?: (user: unknown, token: string, destination?: 'match' | 'deck') => void;
   pendingCreatorRoom?: boolean;
 };
 
 export default function LandingPage({ mode, onModeChange, onRegister, pendingCreatorRoom }: LandingPageProps) {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const inviteIdFromUrl = searchParams.get('invite_id');
   const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl) || Boolean(pendingCreatorRoom));
@@ -737,6 +738,7 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
   const [inviteId, setInviteId] = useState<string | null>(inviteIdFromUrl);
   const [inviteEmail, setInviteEmail] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [signupDestination, setSignupDestination] = useState<'match' | 'deck'>('match');
   const active = modes[mode];
 
   useEffect(() => {
@@ -787,6 +789,16 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
   };
 
   const handleEnter = () => {
+    setSignupDestination('match');
+    setFlowOpen(true);
+  };
+
+  const handleCreatorsClick = () => {
+    if (getToken()) {
+      navigate('/deck');
+      return;
+    }
+    setSignupDestination('deck');
     setFlowOpen(true);
   };
 
@@ -797,7 +809,8 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
       setSearchParams(searchParams, { replace: true });
       setInviteId(null);
     }
-    onRegister?.(userData, token);
+    onRegister?.(userData, token, signupDestination);
+    setSignupDestination('match');
   };
 
   return (
@@ -841,6 +854,13 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
             <span className="safety-pill">🪪 Age verified</span>
             <span className="safety-pill">🔒 Never recorded</span>
             <span className="safety-pill">⚑ Report &amp; block</span>
+            <button
+              className="safety-link"
+              type="button"
+              onClick={handleCreatorsClick}
+            >
+              Creators
+            </button>
             <button
               className="safety-link"
               type="button"

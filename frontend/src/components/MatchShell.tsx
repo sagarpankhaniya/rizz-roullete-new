@@ -6,7 +6,6 @@ import { clearToken, getToken } from '../utils/auth';
 import { clearStoredUser, setStoredUser } from '../utils/user';
 import { disconnectSocket } from '../services/socket';
 import { fetchProfile } from '../services/profile';
-import { getPendingCreatorId } from '../services/creators';
 import {
   bootstrapCameraFromUserGesture,
   deviceNeedsCameraGesture,
@@ -62,12 +61,6 @@ export function MatchShell() {
           return;
         }
         applyUser(user);
-
-        const pendingCreatorId = getPendingCreatorId();
-        if (pendingCreatorId) {
-          navigate(`/creator/${pendingCreatorId}`, { replace: true });
-          return;
-        }
 
         if (deviceRequiresCameraTapGate()) {
           setNeedsCameraGate(true);

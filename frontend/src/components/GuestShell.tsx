@@ -3,7 +3,11 @@ import LandingPage, { type RoomMode } from './LandingPage';
 import { getToken, setToken } from '../utils/auth';
 import { setStoredUser } from '../utils/user';
 import { disconnectSocket } from '../services/socket';
-import { getPendingCreatorId, hasPendingCreatorSignup } from '../services/creators';
+import {
+  clearPendingCreator,
+  getPendingCreatorId,
+  hasPendingCreatorSignup,
+} from '../services/creators';
 import { bootstrapCameraFromUserGesture } from '../utils/cameraBootstrap';
 import { useState } from 'react';
 
@@ -27,7 +31,11 @@ export function GuestShell() {
     localStorage.setItem('rizz_mode', nextMode);
   };
 
-  const onRegister = (userData: unknown, token: string) => {
+  const onRegister = (
+    userData: unknown,
+    token: string,
+    destination: 'match' | 'deck' = 'match',
+  ) => {
     if (token) setToken(token);
     setStoredUser(userData);
     const user = userData as UserData | null;
@@ -37,12 +45,13 @@ export function GuestShell() {
 
     const pendingCreatorId = getPendingCreatorId();
     if (pendingCreatorId) {
+      clearPendingCreator();
       navigate(`/creator/${pendingCreatorId}`, { replace: true });
       return;
     }
 
     void bootstrapCameraFromUserGesture().finally(() => {
-      navigate('/match', { replace: true });
+      navigate(destination === 'deck' ? '/deck' : '/match', { replace: true });
     });
   };
 
