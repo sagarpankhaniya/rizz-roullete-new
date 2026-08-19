@@ -136,6 +136,7 @@ export function CallApp({
     leaveCall,
     markInCall,
     markLiveKitError,
+    syncCallState,
   } = useMatching(username);
 
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -1013,6 +1014,22 @@ export function CallApp({
       setIsSkipping(false);
     }
   }, [isConnected]);
+
+  // LiveKit pool is up but we never got partner info — ask server to sync call state.
+  useEffect(() => {
+    if (isCreatorRoom) return;
+    if (partnerLivekitIdentity || match) return;
+    if (phase !== 'waiting' && phase !== 'connecting') return;
+    if (connectionState !== ConnectionState.Connected) return;
+    syncCallState();
+  }, [
+    isCreatorRoom,
+    partnerLivekitIdentity,
+    match,
+    phase,
+    connectionState,
+    syncCallState,
+  ]);
 
   useEffect(() => {
     if (!isConnected) {

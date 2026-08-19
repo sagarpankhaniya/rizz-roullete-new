@@ -3,6 +3,7 @@ import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { authHeaders, clearToken, getToken, setToken } from '../utils/auth';
+import { clearPendingCreator } from '../services/creators';
 import { apiUrl } from '../utils/api';
 import { UnbanRequestModal } from './UnbanRequestModal';
 
@@ -724,7 +725,7 @@ function SignupPanel({
 export type LandingPageProps = {
   mode: RoomMode;
   onModeChange: (mode: RoomMode) => void;
-  onRegister?: (user: unknown, token: string, destination?: 'match' | 'deck') => void;
+  onRegister?: (user: unknown, token: string, destination?: 'match' | 'deck' | 'creator') => void;
   pendingCreatorRoom?: boolean;
 };
 
@@ -738,7 +739,9 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
   const [inviteId, setInviteId] = useState<string | null>(inviteIdFromUrl);
   const [inviteEmail, setInviteEmail] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
-  const [signupDestination, setSignupDestination] = useState<'match' | 'deck'>('match');
+  const [signupDestination, setSignupDestination] = useState<'match' | 'deck' | 'creator'>(() =>
+    pendingCreatorRoom ? 'creator' : 'match',
+  );
   const active = modes[mode];
 
   useEffect(() => {
@@ -789,6 +792,7 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
   };
 
   const handleEnter = () => {
+    clearPendingCreator();
     setSignupDestination('match');
     setFlowOpen(true);
   };
@@ -798,6 +802,7 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
       navigate('/deck');
       return;
     }
+    clearPendingCreator();
     setSignupDestination('deck');
     setFlowOpen(true);
   };

@@ -76,6 +76,7 @@ export interface CreatorFanWaitingPayload {
 export const SOCKET_EVENTS = {
   START_CALL: 'start_call',
   LEAVE_CALL: 'leave_call',
+  SYNC_CALL: 'sync_call',
   SEND_CHAT: 'send_chat',
   SET_CHAT_TRANSLATE: 'set_chat_translate',
   SEND_TIP: 'send_tip',

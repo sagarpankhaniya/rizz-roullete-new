@@ -34,7 +34,7 @@ export function GuestShell() {
   const onRegister = (
     userData: unknown,
     token: string,
-    destination: 'match' | 'deck' = 'match',
+    destination: 'match' | 'deck' | 'creator' = 'match',
   ) => {
     if (token) setToken(token);
     setStoredUser(userData);
@@ -43,15 +43,23 @@ export function GuestShell() {
     if (name) localStorage.setItem('rizz_username', name);
     disconnectSocket();
 
-    const pendingCreatorId = getPendingCreatorId();
-    if (pendingCreatorId) {
+    if (destination === 'creator') {
+      const pendingCreatorId = getPendingCreatorId();
       clearPendingCreator();
-      navigate(`/creator/${pendingCreatorId}`, { replace: true });
-      return;
+      if (pendingCreatorId) {
+        navigate(`/creator/${pendingCreatorId}`, { replace: true });
+        return;
+      }
+    } else {
+      clearPendingCreator();
     }
 
     void bootstrapCameraFromUserGesture().finally(() => {
-      navigate(destination === 'deck' ? '/deck' : '/match', { replace: true });
+      if (destination === 'deck') {
+        navigate('/deck', { replace: true });
+        return;
+      }
+      navigate('/match', { replace: true });
     });
   };
 

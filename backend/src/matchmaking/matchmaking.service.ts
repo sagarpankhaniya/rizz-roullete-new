@@ -307,27 +307,26 @@ export class MatchmakingService {
     return this.handleDisconnect(oldSocketId, 'partner_disconnected');
   }
 
-  /** Re-bind a reconnected socket to an in-progress call and mint a fresh token. */
-  async tryResumeActiveCall(
+  /**
+   * Re-bind the client to an in-progress call (fresh LiveKit token + partner info).
+   * Used after reconnect, missed `matched` events, or client/server phase drift.
+   */
+  async syncUserToActiveCall(
     userId: string,
     newSocketId: string,
   ): Promise<MatchedPayload | null> {
-    const graceKey = this.redis.key(RedisKeys.callGrace(userId));
-    const inGrace = (await this.redis.getClient().exists(graceKey)) === 1;
-    if (!inGrace) {
+    if (!userId) {
       return null;
     }
 
     const call = await this.getActiveCallByUserId(userId);
     if (!call) {
-      await this.cancelDisconnectGrace(userId);
       return null;
     }
 
     const isA = call.userIdA === userId;
     const isB = call.userIdB === userId;
     if (!isA && !isB) {
-      await this.cancelDisconnectGrace(userId);
       return null;
     }
 
@@ -336,36 +335,37 @@ export class MatchmakingService {
     const partnerIdentity = isA ? call.identityB : call.identityA;
     const partnerIsVip = isA ? Boolean(call.isVipB) : Boolean(call.isVipA);
     const partnerUserId = isA ? call.userIdB || null : call.userIdA || null;
-
-    const updatedCall: ActiveCall = {
-      ...call,
-      ...(isA ? { socketA: newSocketId } : { socketB: newSocketId }),
-    };
-
-    await this.rebindActiveCall(oldSocketId, updatedCall);
-    await this.cancelDisconnectGrace(userId);
-    await this.presence.setOnline(newSocketId, identity);
-    await this.presence.setStatus(newSocketId, 'in_call');
-
     const livekitIdentity = isA ? call.livekitIdentityA : call.livekitIdentityB;
     const partnerLivekitIdentity = isA
       ? call.livekitIdentityB
       : call.livekitIdentityA;
 
+    if (oldSocketId !== newSocketId) {
+      const updatedCall: ActiveCall = {
+        ...call,
+        ...(isA ? { socketA: newSocketId } : { socketB: newSocketId }),
+      };
+      await this.rebindActiveCall(oldSocketId, updatedCall);
+      await this.presence.setOnline(newSocketId, identity);
+    }
+
+    await this.cancelDisconnectGrace(userId);
+    await this.removeFromQueue(newSocketId);
+    await this.presence.setStatus(newSocketId, 'in_call');
+
     const token = await this.livekit.createAccessToken(
       livekitIdentity,
       call.roomName,
     );
-    const livekitUrl = this.livekit.getClientUrl();
 
     this.logger.log(
-      `Resumed call ${call.sessionId} for user ${userId} on socket ${newSocketId}`,
+      `Synced active call ${call.sessionId} for user ${userId} on socket ${newSocketId}`,
     );
 
     return {
       sessionId: call.sessionId,
       roomName: call.roomName,
-      livekitUrl,
+      livekitUrl: this.livekit.getClientUrl(),
       token,
       livekitIdentity,
       identity,
@@ -373,6 +373,31 @@ export class MatchmakingService {
       partnerLivekitIdentity,
       partnerIsVip,
       partnerUserId,
+    };
+  }
+
+  /** @deprecated alias — use syncUserToActiveCall */
+  async tryResumeActiveCall(
+    userId: string,
+    newSocketId: string,
+  ): Promise<MatchedPayload | null> {
+    return this.syncUserToActiveCall(userId, newSocketId);
+  }
+
+  private async trySyncActiveCallMatch(
+    socketId: string,
+    userId: string | undefined,
+  ): Promise<MatchResult | null> {
+    if (!userId) {
+      return null;
+    }
+    const payload = await this.syncUserToActiveCall(userId, socketId);
+    if (!payload) {
+      return null;
+    }
+    return {
+      status: 'matched',
+      matches: [{ socketId, payload }],
     };
   }
 
@@ -645,6 +670,11 @@ export class MatchmakingService {
     } = input;
     const prefs: MatchPrefs = { gender, interestedIn };
     const bucket = ownBucket(prefs);
+
+    const syncedMatch = await this.trySyncActiveCallMatch(socketId, userId);
+    if (syncedMatch) {
+      return syncedMatch;
+    }
 
     if (await this.isWaiting(socketId)) {
       this.logger.warn(`Ignoring duplicate enqueue for ${socketId}`);

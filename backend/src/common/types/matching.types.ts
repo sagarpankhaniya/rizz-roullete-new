@@ -102,6 +102,8 @@ export const SOCKET_EVENTS = {
   START_CALL: 'start_call',
   /** Client → server: leave the queue or active call */
   LEAVE_CALL: 'leave_call',
+  /** Client → server: recover in-progress call if `matched` was missed */
+  SYNC_CALL: 'sync_call',
   /** Client → server: ephemeral in-call chat (not persisted) */
   SEND_CHAT: 'send_chat',
   /** Client → server: set preferred language for incoming chat translations */

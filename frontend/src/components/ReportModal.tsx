@@ -68,85 +68,84 @@ export function ReportModal({
   }
 
   return (
-    <section className="flow-backdrop rizz-page moderated">
-      <div
-        className="flow-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="report-title"
-      >
-        <div className="flow-top">
-          <span>
-            <Flag size={14} style={{ marginRight: 6 }} />
+    <div
+      className="live-room-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="report-title"
+    >
+      <div className="live-room-overlay-card report-overlay-card">
+        <div className="report-overlay-head">
+          <span className="report-overlay-kicker">
+            <Flag size={14} aria-hidden="true" />
             Report user
           </span>
           <button type="button" onClick={onClose} aria-label="Close">
             <X size={20} />
           </button>
         </div>
-        <div className="flow-screen">
-          <h2 id="report-title">Report {partnerName}</h2>
-          <p>
-            Tell an admin if this person is misbehaving. We will review and
-            may ban their account.
-          </p>
 
+        <h3 id="report-title">Report {partnerName}</h3>
+        <p>
+          Tell an admin if this person is misbehaving. We will review and may
+          ban their account.
+        </p>
+
+        {!sent && (
+          <>
+            <label className="report-field-label" htmlFor="report-reason">
+              Reason
+            </label>
+            <select
+              id="report-reason"
+              className="report-select"
+              value={reason}
+              onChange={(e) =>
+                setReason(
+                  e.target.value as (typeof REPORT_REASONS)[number]['value'],
+                )
+              }
+            >
+              {REPORT_REASONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="report-field-label" htmlFor="report-details">
+              Details (optional)
+            </label>
+            <textarea
+              id="report-details"
+              className="report-textarea"
+              rows={3}
+              maxLength={1000}
+              placeholder="What happened?"
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+            />
+          </>
+        )}
+
+        {status && <p className="report-status">{status}</p>}
+
+        <div className="flow-actions">
           {!sent && (
-            <>
-              <label className="report-field-label" htmlFor="report-reason">
-                Reason
-              </label>
-              <select
-                id="report-reason"
-                className="report-select"
-                value={reason}
-                onChange={(e) =>
-                  setReason(
-                    e.target.value as (typeof REPORT_REASONS)[number]['value'],
-                  )
-                }
-              >
-                {REPORT_REASONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-
-              <label className="report-field-label" htmlFor="report-details">
-                Details (optional)
-              </label>
-              <textarea
-                id="report-details"
-                className="report-textarea"
-                rows={3}
-                maxLength={1000}
-                placeholder="What happened?"
-                value={details}
-                onChange={(e) => setDetails(e.target.value)}
-              />
-            </>
-          )}
-
-          {status && <p className="report-status">{status}</p>}
-
-          <div className="flow-actions">
-            {!sent && (
-              <button
-                type="button"
-                className="hot-button"
-                disabled={submitting}
-                onClick={() => void submitReport()}
-              >
-                {submitting ? 'Sending…' : 'Send report'}
-              </button>
-            )}
-            <button type="button" className="ghost-button" onClick={onClose}>
-              {sent ? 'Close' : 'Cancel'}
+            <button
+              type="button"
+              className="hot-button"
+              disabled={submitting}
+              onClick={() => void submitReport()}
+            >
+              {submitting ? 'Sending…' : 'Send report'}
             </button>
-          </div>
+          )}
+          <button type="button" className="ghost-button" onClick={onClose}>
+            {sent ? 'Close' : 'Cancel'}
+          </button>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

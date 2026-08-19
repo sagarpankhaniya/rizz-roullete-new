@@ -111,14 +111,14 @@ export class MatchingGateway
         await this.presence.updateIdentity(client.id, user.identity);
         await this.presence.setUserSocket(user.userId, client.id);
 
-        const resumed = await this.matchmaking.tryResumeActiveCall(
+        const resumed = await this.matchmaking.syncUserToActiveCall(
           user.userId,
           client.id,
         );
         if (resumed) {
           client.emit(SOCKET_EVENTS.CALL_RESUMED, resumed);
           this.logger.log(
-            `Socket reconnected into active call: ${client.id} user=${user.userId}`,
+            `Socket synced into active call: ${client.id} user=${user.userId}`,
           );
           return;
         }
@@ -265,14 +265,26 @@ export class MatchingGateway
             );
           }
         }
-        return;
+        return { status: 'waiting' as const, ...waitingPayload };
       }
 
+      const ownMatch = result.matches?.find((m) => m.socketId === client.id);
+
       for (const match of result.matches ?? []) {
-        this.server
-          .to(match.socketId)
-          .emit(SOCKET_EVENTS.MATCHED, match.payload);
+        if (match.socketId === client.id) {
+          // Direct emit — mobile Safari sometimes drops room-targeted events.
+          client.emit(SOCKET_EVENTS.MATCHED, match.payload);
+        } else {
+          this.server
+            .to(match.socketId)
+            .emit(SOCKET_EVENTS.MATCHED, match.payload);
+        }
       }
+
+      return {
+        status: 'matched' as const,
+        match: ownMatch?.payload ?? null,
+      };
     } catch (error) {
       this.logger.error(
         `start_call failed for ${client.id}`,
@@ -290,6 +302,32 @@ export class MatchingGateway
           (cleanupError as Error).stack,
         );
       }
+    }
+  }
+
+  @SubscribeMessage(SOCKET_EVENTS.SYNC_CALL)
+  async onSyncCall(@ConnectedSocket() client: Socket) {
+    try {
+      const user = client.data.user as SocketUser | undefined;
+      if (!user?.userId) {
+        return { ok: false };
+      }
+
+      const resumed = await this.matchmaking.syncUserToActiveCall(
+        user.userId,
+        client.id,
+      );
+      if (resumed) {
+        client.emit(SOCKET_EVENTS.CALL_RESUMED, resumed);
+        return { ok: true, synced: true };
+      }
+      return { ok: true, synced: false };
+    } catch (error) {
+      this.logger.error(
+        `sync_call failed for ${client.id}`,
+        (error as Error).stack,
+      );
+      return { ok: false };
     }
   }
 
