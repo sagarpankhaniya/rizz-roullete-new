@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MatchingController } from './matching.controller';
 import { MatchingGateway } from './matching.gateway';
 import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { PresenceModule } from '../presence/presence.module';
@@ -24,6 +25,7 @@ import { TranslationModule } from '../translation/translation.module';
     ChatModule,
     TranslationModule,
   ],
+  controllers: [MatchingController],
   providers: [MatchingGateway],
 })
 export class MatchingModule {}

@@ -3,6 +3,8 @@ import type { Socket } from 'socket.io-client';
 import { getSocket } from '../services/socket';
 import { getStoredUser } from '../utils/user';
 import { getCreatorId } from '../services/creators';
+import { apiUrl } from '../utils/api';
+import { authHeaders } from '../utils/auth';
 import {
   SOCKET_EVENTS,
   type CallPhase,
@@ -34,28 +36,59 @@ export function useMatching(identity?: string) {
   const socketRef = useRef<Socket | null>(null);
   const identityRef = useRef(identity);
   const phaseRef = useRef(phase);
+  const matchRef = useRef(match);
+  const livekitSessionRef = useRef(livekitSession);
   identityRef.current = identity;
   phaseRef.current = phase;
+  matchRef.current = match;
+  livekitSessionRef.current = livekitSession;
 
   const applyLivekitCredentials = useCallback((payload: LiveKitCredentials) => {
+    livekitSessionRef.current = payload;
     setLivekitSession(payload);
   }, []);
 
   const applyMatched = useCallback(
     (payload: MatchedPayload, message?: string) => {
+      const current = matchRef.current;
+      const sameCall = current?.sessionId === payload.sessionId;
+
+      // Duplicate socket/HTTP delivery — avoid re-render + subscription churn.
+      if (
+        sameCall &&
+        current?.partnerLivekitIdentity === payload.partnerLivekitIdentity &&
+        livekitSessionRef.current?.token
+      ) {
+        return;
+      }
+
+      matchRef.current = payload;
       setMatch(payload);
       setPhase((prev) => (prev === 'in_call' ? 'in_call' : 'matched'));
-      applyLivekitCredentials(payload);
       setStatusMessage(
         message ??
           `Matched with ${payload.partnerIdentity}. Connecting to LiveKit…`,
       );
+
+      // Waiter already joined the pool on waiting credentials — same room, new
+      // token must not tear down LiveKit (causes black flash + reconnect).
+      const alreadyInPool =
+        livekitSessionRef.current?.roomName === payload.roomName &&
+        Boolean(livekitSessionRef.current?.token);
+
+      if (!alreadyInPool) {
+        applyLivekitCredentials(payload);
+      }
     },
     [applyLivekitCredentials],
   );
 
   const applyWaiting = useCallback(
     (payload: WaitingPayload) => {
+      // Never downgrade or clobber pool credentials once we know the partner.
+      if (matchRef.current) {
+        return;
+      }
       setPhase((prev) => {
         if (prev === 'matched' || prev === 'in_call') {
           return prev;
@@ -68,15 +101,50 @@ export function useMatching(identity?: string) {
     [applyLivekitCredentials],
   );
 
-  const syncCallState = useCallback(() => {
+  const syncCallState = useCallback(async () => {
+    // Already matched with LiveKit up — skip to avoid token churn reconnect loops.
+    if (
+      matchRef.current?.sessionId &&
+      matchRef.current.partnerLivekitIdentity &&
+      livekitSessionRef.current?.token
+    ) {
+      return;
+    }
+
+    // HTTP first — ngrok/mobile often drops Socket.IO server→client events.
+    try {
+      const res = await fetch(apiUrl('/api/match/active'), {
+        headers: authHeaders(),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          synced?: boolean;
+          call?: MatchedPayload;
+        };
+        if (data.synced && data.call) {
+          applyMatched(data.call, 'Reconnected — resuming your call…');
+          return;
+        }
+      }
+    } catch {
+      // Fall through to socket ack.
+    }
+
     const socket = socketRef.current ?? getSocket();
     if (!socket.connected) {
       return;
     }
-    socket.timeout(5000).emit(SOCKET_EVENTS.SYNC_CALL, {}, () => {
-      // Response handled via call_resumed listener.
-    });
-  }, []);
+    socket.emit(
+      SOCKET_EVENTS.SYNC_CALL,
+      {},
+      (ack?: { synced?: boolean; call?: MatchedPayload }) => {
+        if (ack?.synced && ack.call) {
+          applyMatched(ack.call, 'Reconnected — resuming your call…');
+        }
+      },
+    );
+  }, [applyMatched]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -88,10 +156,8 @@ export function useMatching(identity?: string) {
           ? 'Connected to matching server.'
           : prev,
       );
-      if (
-        phaseRef.current === 'waiting' ||
-        phaseRef.current === 'connecting'
-      ) {
+      // Reconnect / remount — resync if the server already placed us in a call.
+      if (!matchRef.current) {
         syncCallState();
       }
     };
@@ -109,6 +175,7 @@ export function useMatching(identity?: string) {
     };
 
     const onPartnerLeft = (payload: PartnerLeftPayload) => {
+      matchRef.current = null;
       setMatch(null);
       setPhase('partner_left');
       setStatusMessage(payload.reason);
@@ -142,6 +209,7 @@ export function useMatching(identity?: string) {
     const emitStart = () => {
       setPhase('connecting');
       setStatusMessage('Joining waiting queue…');
+      matchRef.current = null;
       setMatch(null);
 
       const stored = getStoredUser();
@@ -156,25 +224,19 @@ export function useMatching(identity?: string) {
         payload.targetCreatorUserId = targetCreatorUserId;
       }
 
-      socket.timeout(15000).emit(
-        SOCKET_EVENTS.START_CALL,
-        payload,
-        (err: Error | null, ack?: StartCallAck) => {
-          if (err) {
-            setPhase('error');
-            setStatusMessage('Failed to join match queue. Please retry.');
-            return;
-          }
-          if (!ack) return;
-          if (ack.status === 'matched' && ack.match) {
-            applyMatched(ack.match);
-            return;
-          }
-          if (ack.status === 'waiting' && ack.message) {
-            applyWaiting(ack);
-          }
-        },
-      );
+      // Matched via socket event or ack — HTTP is only a backup for dropped events.
+      socket.emit(SOCKET_EVENTS.START_CALL, payload, (ack?: StartCallAck) => {
+        if (!ack) return;
+        if (ack.status === 'matched' && ack.match) {
+          applyMatched(ack.match);
+          return;
+        }
+        if (ack.status === 'waiting' && ack.message) {
+          applyWaiting(ack);
+        }
+      });
+
+      window.setTimeout(() => void syncCallState(), 600);
     };
 
     if (socket.connected) {
@@ -186,7 +248,7 @@ export function useMatching(identity?: string) {
     setStatusMessage('Connecting to server…');
     socket.connect();
     socket.once('connect', emitStart);
-  }, [applyMatched, applyWaiting]);
+  }, [applyMatched, applyWaiting, syncCallState]);
 
   const leaveCall = useCallback(() => {
     return new Promise<void>((resolve) => {
@@ -196,6 +258,7 @@ export function useMatching(identity?: string) {
       const finish = () => {
         if (settled) return;
         settled = true;
+        matchRef.current = null;
         setMatch(null);
         setPhase('idle');
         setStatusMessage('You left the call.');
@@ -230,8 +293,19 @@ export function useMatching(identity?: string) {
   }, []);
 
   // Recover if the server matched us but the `matched` event was dropped.
+  // Key off missing `match`, not phase — LiveKit may already be up (in_call).
   useEffect(() => {
-    if (phase !== 'waiting' && phase !== 'connecting') {
+    if (match) {
+      return;
+    }
+    const mightBeInCall =
+      phase === 'waiting' ||
+      phase === 'connecting' ||
+      phase === 'in_call' ||
+      phase === 'matched' ||
+      // Remount after verify: pool creds exist but React state was reset to idle.
+      (phase === 'idle' && livekitSession !== null);
+    if (!mightBeInCall) {
       return;
     }
 
@@ -243,8 +317,8 @@ export function useMatching(identity?: string) {
     };
 
     requestSync();
-    const timer = window.setTimeout(requestSync, 800);
-    const interval = window.setInterval(requestSync, 2500);
+    const timer = window.setTimeout(requestSync, 500);
+    const interval = window.setInterval(requestSync, 2000);
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -259,7 +333,7 @@ export function useMatching(identity?: string) {
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [phase, syncCallState]);
+  }, [phase, match, livekitSession, syncCallState]);
 
   return {
     phase,

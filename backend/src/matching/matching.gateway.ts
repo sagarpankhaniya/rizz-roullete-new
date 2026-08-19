@@ -102,6 +102,29 @@ export class MatchingGateway
     this.logger.log(`Socket.IO CORS origins: ${origins}`);
   }
 
+  /** Direct socket emit — more reliable than server.to() for the waiting partner on mobile. */
+  private emitToSocket(
+    socketId: string,
+    event: string,
+    payload: unknown,
+  ): boolean {
+    const sock = this.server.sockets.sockets.get(socketId);
+    if (sock?.connected) {
+      sock.emit(event, payload);
+      return true;
+    }
+    this.server.to(socketId).emit(event, payload);
+    return false;
+  }
+
+  private deliverMatched(socketId: string, payload: unknown): void {
+    this.emitToSocket(socketId, SOCKET_EVENTS.MATCHED, payload);
+    // One delayed retry for clients that miss the first emit — no burst (causes UI flicker).
+    setTimeout(() => {
+      this.emitToSocket(socketId, SOCKET_EVENTS.MATCHED, payload);
+    }, 800);
+  }
+
   async handleConnection(client: Socket) {
     try {
       await this.presence.setOnline(client.id);
@@ -116,7 +139,7 @@ export class MatchingGateway
           client.id,
         );
         if (resumed) {
-          client.emit(SOCKET_EVENTS.CALL_RESUMED, resumed);
+          this.emitToSocket(client.id, SOCKET_EVENTS.CALL_RESUMED, resumed);
           this.logger.log(
             `Socket synced into active call: ${client.id} user=${user.userId}`,
           );
@@ -271,14 +294,7 @@ export class MatchingGateway
       const ownMatch = result.matches?.find((m) => m.socketId === client.id);
 
       for (const match of result.matches ?? []) {
-        if (match.socketId === client.id) {
-          // Direct emit — mobile Safari sometimes drops room-targeted events.
-          client.emit(SOCKET_EVENTS.MATCHED, match.payload);
-        } else {
-          this.server
-            .to(match.socketId)
-            .emit(SOCKET_EVENTS.MATCHED, match.payload);
-        }
+        this.deliverMatched(match.socketId, match.payload);
       }
 
       return {
@@ -308,7 +324,13 @@ export class MatchingGateway
   @SubscribeMessage(SOCKET_EVENTS.SYNC_CALL)
   async onSyncCall(@ConnectedSocket() client: Socket) {
     try {
-      const user = client.data.user as SocketUser | undefined;
+      let user = client.data.user as SocketUser | undefined;
+      if (!user?.userId) {
+        user = (await this.resolveSocketUser(client)) ?? undefined;
+        if (user) {
+          client.data.user = user;
+        }
+      }
       if (!user?.userId) {
         return { ok: false };
       }
@@ -318,8 +340,8 @@ export class MatchingGateway
         client.id,
       );
       if (resumed) {
-        client.emit(SOCKET_EVENTS.CALL_RESUMED, resumed);
-        return { ok: true, synced: true };
+        this.emitToSocket(client.id, SOCKET_EVENTS.CALL_RESUMED, resumed);
+        return { ok: true, synced: true, call: resumed };
       }
       return { ok: true, synced: false };
     } catch (error) {

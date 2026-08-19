@@ -7,6 +7,12 @@ import { getToken } from '../utils/auth';
  */
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || undefined;
 
+/** Mobile WebKit drops WS events; polling-first helps there. Desktop keeps WS-first. */
+function preferPollingFirst(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+
 let socket: Socket | null = null;
 
 /**
@@ -21,7 +27,9 @@ export function getSocket(): Socket {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: true,
-      transports: ['websocket', 'polling'],
+      transports: preferPollingFirst()
+        ? ['polling', 'websocket']
+        : ['websocket', 'polling'],
       auth: (cb: (data: Record<string, string>) => void) => {
         const token = getToken();
         cb(token ? { token } : {});

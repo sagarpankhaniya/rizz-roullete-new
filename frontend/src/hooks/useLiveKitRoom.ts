@@ -16,7 +16,6 @@ import type { LiveKitCredentials } from '../types/events';
 import {
   applyOutboundEncodingHints,
   installPublisherSdpBitrateHints,
-  isMobileDevice,
   preferHighRemoteVideo,
   startPublisherStatsLogging,
   stopPublisherStatsLogging,
@@ -29,6 +28,8 @@ interface UseLiveKitRoomOptions {
   partnerLivekitIdentity: string | null;
   /** Connect + publish while searching or in a call */
   active: boolean;
+  /** Called when another participant publishes in the pool but we have no partner yet. */
+  onUnpairedRemoteParticipant?: () => void;
   onConnected?: () => void;
   onDisconnected?: () => void;
   onError?: (message: string) => void;
@@ -71,7 +72,8 @@ function createRoomInstance(): Room {
       },
       videoSimulcastLayers: [VideoPresets.h540, VideoPresets.h720],
       degradationPreference: 'maintain-resolution',
-      ...(isMobileDevice() ? { videoCodec: 'h264' as const } : {}),
+      // H.264 on all devices — avoids garbled video when mobile ↔ laptop match.
+      videoCodec: 'h264' as const,
     },
   });
 }
@@ -84,6 +86,7 @@ export function useLiveKitRoom({
   session,
   partnerLivekitIdentity,
   active,
+  onUnpairedRemoteParticipant,
   onConnected,
   onDisconnected,
   onError,
@@ -99,6 +102,21 @@ export function useLiveKitRoom({
   const camEnabledRef = useRef(true);
   const facingModeRef = useRef<'user' | 'environment'>('user');
   const connectGenRef = useRef(0);
+  const lastUnpairedHintRef = useRef(0);
+  const subscribedPartnerRef = useRef<string | null>(null);
+
+  const onUnpairedRemoteParticipantRef = useRef(onUnpairedRemoteParticipant);
+  onUnpairedRemoteParticipantRef.current = onUnpairedRemoteParticipant;
+
+  const hintUnpairedRemote = useCallback((participant: RemoteParticipant) => {
+    if (partnerRef.current) return;
+    const localId = roomRef.current?.localParticipant.identity;
+    if (participant.identity === localId) return;
+    const now = Date.now();
+    if (now - lastUnpairedHintRef.current < 1500) return;
+    lastUnpairedHintRef.current = now;
+    onUnpairedRemoteParticipantRef.current?.();
+  }, []);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>(
     ConnectionState.Disconnected,
@@ -147,6 +165,7 @@ export function useLiveKitRoom({
 
       if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
         track.attach(remoteVideoRef.current);
+        void remoteVideoRef.current.play().catch(() => undefined);
       }
       if (track.kind === Track.Kind.Audio && remoteAudioRef.current) {
         track.attach(remoteAudioRef.current);
@@ -165,32 +184,45 @@ export function useLiveKitRoom({
 
   const subscribeToPartner = useCallback(
     (room: Room, identity: string | null) => {
-      unsubscribeAllRemote(room);
-
       if (!identity) {
+        subscribedPartnerRef.current = null;
+        unsubscribeAllRemote(room);
         setRemoteIdentity(null);
         return;
       }
 
       const participant = room.remoteParticipants.get(identity);
       if (!participant) {
+        // Partner identity known but not in the room yet — do not lock out retries.
+        subscribedPartnerRef.current = null;
         setRemoteIdentity(null);
         return;
       }
 
-      setRemoteIdentity(participant.identity);
-      for (const publication of participant.trackPublications.values()) {
-        const remotePub = publication as RemoteTrackPublication;
-        remotePub.setSubscribed(true);
-        preferHighRemoteVideo(remotePub);
-        if (remotePub.track) {
-          attachRemoteTrack(
-            remotePub.track as RemoteTrack,
-            remotePub,
-            participant,
-          );
+      const refreshAttachments = () => {
+        setRemoteIdentity(participant.identity);
+        for (const publication of participant.trackPublications.values()) {
+          const remotePub = publication as RemoteTrackPublication;
+          remotePub.setSubscribed(true);
+          preferHighRemoteVideo(remotePub);
+          if (remotePub.track) {
+            attachRemoteTrack(
+              remotePub.track as RemoteTrack,
+              remotePub,
+              participant,
+            );
+          }
         }
+      };
+
+      if (identity === subscribedPartnerRef.current) {
+        refreshAttachments();
+        return;
       }
+
+      subscribedPartnerRef.current = identity;
+      unsubscribeAllRemote(room);
+      refreshAttachments();
     },
     [attachRemoteTrack, unsubscribeAllRemote],
   );
@@ -218,10 +250,16 @@ export function useLiveKitRoom({
       ) => {
         if (participant.identity !== partnerRef.current) {
           publication.setSubscribed(false);
+          if (publication.kind === Track.Kind.Video) {
+            hintUnpairedRemote(participant);
+          }
           return;
         }
         publication.setSubscribed(true);
         preferHighRemoteVideo(publication);
+        if (publication.track) {
+          attachRemoteTrack(publication.track, publication, participant);
+        }
       };
 
       const onParticipantConnected = (participant: RemoteParticipant) => {
@@ -231,6 +269,7 @@ export function useLiveKitRoom({
           for (const publication of participant.trackPublications.values()) {
             (publication as RemoteTrackPublication).setSubscribed(false);
           }
+          hintUnpairedRemote(participant);
         }
       };
 
@@ -268,7 +307,7 @@ export function useLiveKitRoom({
     }
 
     return roomRef.current;
-  }, [attachLocalVideo, attachRemoteTrack, subscribeToPartner]);
+  }, [attachLocalVideo, attachRemoteTrack, subscribeToPartner, hintUnpairedRemote]);
 
   // Connect once to the pool room; publish during search so BWE ramps early.
   useEffect(() => {
@@ -279,13 +318,17 @@ export function useLiveKitRoom({
     const room = ensureRoom();
     const gen = ++connectGenRef.current;
     let cancelled = false;
+    const { roomName, livekitUrl, token } = session;
 
     const connect = async () => {
       try {
         if (
           room.state === ConnectionState.Connected &&
-          connectedRoomRef.current === session.roomName
+          connectedRoomRef.current === roomName
         ) {
+          if (partnerRef.current) {
+            subscribeToPartner(room, partnerRef.current);
+          }
           return;
         }
 
@@ -293,7 +336,7 @@ export function useLiveKitRoom({
           await room.disconnect();
         }
 
-        await room.connect(session.livekitUrl, session.token, {
+        await room.connect(livekitUrl, token, {
           autoSubscribe: false,
         });
 
@@ -301,7 +344,7 @@ export function useLiveKitRoom({
           return;
         }
 
-        connectedRoomRef.current = session.roomName;
+        connectedRoomRef.current = roomName;
         installPublisherSdpBitrateHints(room);
 
         await onBeforeEnableCameraRef.current?.();
@@ -324,6 +367,10 @@ export function useLiveKitRoom({
         installPublisherSdpBitrateHints(room);
         await applyOutboundEncodingHints(room);
         startPublisherStatsLogging(room, 'preconnect');
+
+        if (partnerRef.current) {
+          subscribeToPartner(room, partnerRef.current);
+        }
       } catch (error) {
         if (cancelled || gen !== connectGenRef.current) {
           return;
@@ -341,25 +388,56 @@ export function useLiveKitRoom({
     return () => {
       cancelled = true;
     };
-  }, [active, session, ensureRoom, attachLocalVideo]);
+  }, [
+    active,
+    session?.roomName,
+    session?.livekitUrl,
+    session?.token,
+    ensureRoom,
+    attachLocalVideo,
+    subscribeToPartner,
+  ]);
 
-  // Switch partner subscription without tearing down transport.
+  // Subscribe to partner tracks; retry until they appear in the pool room.
   useEffect(() => {
-    const room = roomRef.current;
-    if (!room || room.state !== ConnectionState.Connected) {
-      return;
-    }
-
     if (!partnerLivekitIdentity) {
-      unsubscribeAllRemote(room);
+      subscribedPartnerRef.current = null;
+      const room = roomRef.current;
+      if (room && room.state === ConnectionState.Connected) {
+        unsubscribeAllRemote(room);
+      }
       setRemoteIdentity(null);
       return;
     }
 
-    subscribeToPartner(room, partnerLivekitIdentity);
-    startPublisherStatsLogging(room, `match-${partnerLivekitIdentity}`);
+    const attempt = () => {
+      const room = roomRef.current;
+      if (!room || room.state !== ConnectionState.Connected) {
+        return false;
+      }
+      subscribeToPartner(room, partnerLivekitIdentity);
+      startPublisherStatsLogging(room, `match-${partnerLivekitIdentity}`);
+      return subscribedPartnerRef.current === partnerLivekitIdentity;
+    };
+
+    if (attempt()) {
+      return;
+    }
+
+    const retry = window.setInterval(() => {
+      if (attempt()) {
+        window.clearInterval(retry);
+      }
+    }, 500);
+    const cap = window.setTimeout(() => window.clearInterval(retry), 20_000);
+
+    return () => {
+      window.clearInterval(retry);
+      window.clearTimeout(cap);
+    };
   }, [
     partnerLivekitIdentity,
+    connectionState,
     subscribeToPartner,
     unsubscribeAllRemote,
   ]);
@@ -380,6 +458,7 @@ export function useLiveKitRoom({
   }, []);
 
   const unsubscribePartner = useCallback(() => {
+    subscribedPartnerRef.current = null;
     const room = roomRef.current;
     if (room && room.state === ConnectionState.Connected) {
       unsubscribeAllRemote(room);

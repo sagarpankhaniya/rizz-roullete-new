@@ -239,6 +239,10 @@ export function CallApp({
   const livekitActive =
     genderCheck.status === 'verified' && Boolean(livekitSession);
 
+  const onLiveKitConnected = useCallback(() => {
+    markInCall();
+  }, [markInCall]);
+
   const {
     localVideoRef,
     remoteVideoRef,
@@ -257,8 +261,9 @@ export function CallApp({
     session: livekitSession,
     partnerLivekitIdentity,
     active: livekitActive,
-    onConnected: markInCall,
+    onConnected: onLiveKitConnected,
     onError: markLiveKitError,
+    onUnpairedRemoteParticipant: syncCallState,
     // Free front cam only in the moment LiveKit needs it
     onBeforeEnableCamera: stopPreview,
   });
@@ -972,10 +977,10 @@ export function CallApp({
     setTipStatus('');
   }, [match?.sessionId]);
 
-  // Reveal partner video only after the first decoded frame (avoids black → flash)
+  // Reveal partner video only after the first decoded frame (avoids black → flash).
+  // Do not reset feed-ready on brief connection flicker — only on new session.
   useEffect(() => {
-    if (!isConnected || !remoteIdentity || !match) {
-      setPartnerFeedReady(false);
+    if (!remoteIdentity || !match) {
       return;
     }
 
@@ -995,7 +1000,6 @@ export function CallApp({
     el.addEventListener('playing', markReady);
     el.addEventListener('resize', markReady);
 
-    // Already playing (e.g. track attached before listeners)
     if (el.readyState >= 2 && el.videoWidth > 0) {
       markReady();
     }
@@ -1006,7 +1010,7 @@ export function CallApp({
       el.removeEventListener('playing', markReady);
       el.removeEventListener('resize', markReady);
     };
-  }, [isConnected, remoteIdentity, match, remoteVideoRef]);
+  }, [remoteIdentity, match, remoteVideoRef]);
 
   // Once LiveKit is up, hand PiP back to the live local track
   useEffect(() => {
@@ -1017,19 +1021,10 @@ export function CallApp({
 
   // LiveKit pool is up but we never got partner info — ask server to sync call state.
   useEffect(() => {
-    if (isCreatorRoom) return;
     if (partnerLivekitIdentity || match) return;
-    if (phase !== 'waiting' && phase !== 'connecting') return;
     if (connectionState !== ConnectionState.Connected) return;
-    syncCallState();
-  }, [
-    isCreatorRoom,
-    partnerLivekitIdentity,
-    match,
-    phase,
-    connectionState,
-    syncCallState,
-  ]);
+    void syncCallState();
+  }, [partnerLivekitIdentity, match, connectionState, syncCallState]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -1400,7 +1395,9 @@ export function CallApp({
     : verifyFailed
       ? genderCheck.message
       : showPartnerLoading
-        ? `Finding ${isUnmod ? 'premium' : 'cute'} match for ${username}…`
+        ? match?.partnerIdentity
+          ? `Connecting to ${match.partnerIdentity}…`
+          : `Finding ${isUnmod ? 'premium' : 'cute'} match for ${username}…`
         : isConnected
           ? '✨ Connected!'
           : `Welcome, ${username}`;
@@ -1417,6 +1414,9 @@ export function CallApp({
           : `Joining ${creatorName}…`
     : partnerFeedReady && partnerDisplayName
       ? partnerDisplayName
+      : partnerDisplayName &&
+          (phase === 'matched' || phase === 'in_call' || isConnecting)
+        ? partnerDisplayName
       : isVerifying
         ? genderCheck.status === 'age_checking'
           ? 'Age verification…'
@@ -1425,6 +1425,8 @@ export function CallApp({
           ? 'Start verification'
           : verifyFailed
             ? 'Verification paused'
+            : isConnecting
+              ? 'Connecting…'
             : 'Finding your spark…';
 
   const partnerSubtitle = isCreatorRoom
