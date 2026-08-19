@@ -235,7 +235,6 @@ export function useMatching(identity?: string) {
       return;
     }
 
-    const socket = socketRef.current ?? getSocket();
     let cancelled = false;
 
     const requestSync = () => {
