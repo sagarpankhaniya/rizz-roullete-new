@@ -1170,6 +1170,30 @@ h1 {
   margin-top: 18px;
 }
 
+.flow-panel-solid .flow-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.flow-panel-solid .flow-actions .hot-button,
+.flow-panel-solid .flow-actions .ghost-button {
+  width: 100%;
+  min-width: 0;
+  text-wrap: balance;
+}
+
+.flow-panel-solid .flow-actions .ghost-button {
+  font-size: 13px;
+  padding: 0 12px;
+}
+
+.flow-panel-solid .flow-actions .google-sign-in-wrap,
+.flow-panel-solid .flow-actions .google-sign-in-button {
+  width: 100%;
+  min-width: 0;
+}
+
 .google-sign-in-button {
   display: inline-flex;
   align-items: center;
@@ -4638,6 +4662,11 @@ h1 {
   .flow-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .flow-panel-solid .flow-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .flow-actions .hot-button,

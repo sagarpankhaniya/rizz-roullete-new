@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 
 type GoogleSignInButtonProps = {
@@ -15,6 +16,23 @@ export function GoogleSignInButton({
   onIdToken,
   onError,
 }: GoogleSignInButtonProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [buttonWidth, setButtonWidth] = useState(320);
+
+  useEffect(() => {
+    const node = wrapRef.current;
+    if (!node) return;
+
+    const updateWidth = () => {
+      setButtonWidth(Math.max(Math.floor(node.getBoundingClientRect().width), 200));
+    };
+
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   if (disabled) {
     return (
       <div className="google-sign-in-button google-sign-in-button--disabled">
@@ -24,7 +42,7 @@ export function GoogleSignInButton({
   }
 
   return (
-    <div className="google-sign-in-wrap">
+    <div className="google-sign-in-wrap" ref={wrapRef}>
       <GoogleLogin
         onSuccess={(response: CredentialResponse) => {
           if (response.credential) {
@@ -39,7 +57,7 @@ export function GoogleSignInButton({
         size="large"
         text="continue_with"
         shape="pill"
-        width={320}
+        width={buttonWidth}
       />
     </div>
   );

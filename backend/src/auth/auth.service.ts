@@ -188,10 +188,7 @@ export class AuthService {
     firstName: string;
     photo: string | null;
   }> {
-    const clientId = this.config.get<string>('google.clientId')?.trim();
-    if (!clientId) {
-      throw new ServiceUnavailableException('Google sign-in is not configured');
-    }
+    const clientId = this.config.getOrThrow<string>('google.clientId');
 
     const client = new OAuth2Client(clientId);
     return client

@@ -2,7 +2,13 @@
  * Central configuration factory — all runtime settings come from env vars.
  * Bound via ConfigModule.forRoot({ load: [configuration] }).
  */
-export default () => ({
+export default () => {
+  const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  if (!googleClientId) {
+    throw new Error('GOOGLE_CLIENT_ID is required in backend/.env');
+  }
+
+  return {
   port: parseInt(process.env.PORT ?? '3001', 10),
   /** development | production | test — age verification is skipped outside production */
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -18,7 +24,7 @@ export default () => ({
   },
 
   google: {
-    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    clientId: googleClientId,
   },
 
   mongodb: {
@@ -116,4 +122,5 @@ export default () => ({
       process.env.AZURE_TRANSLATOR_ENDPOINT ??
       'https://api.cognitive.microsofttranslator.com',
   },
-});
+};
+};
