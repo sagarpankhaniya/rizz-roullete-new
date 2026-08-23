@@ -113,6 +113,11 @@ export class GenderVerificationService {
       await this.recordFrameResult(userId, {
         isConfidentMatch,
         isConfidentMismatch,
+        detectedGender:
+          isConfidentMismatch &&
+          (result.gender === 'male' || result.gender === 'female')
+            ? result.gender
+            : undefined,
       });
 
     return {
@@ -144,6 +149,7 @@ export class GenderVerificationService {
     outcome: {
       isConfidentMatch: boolean;
       isConfidentMismatch: boolean;
+      detectedGender?: BinaryGender;
     },
   ): Promise<{ verificationPassed: boolean; accountBanned: boolean }> {
     const client = this.redis.getClient();
@@ -164,10 +170,21 @@ export class GenderVerificationService {
 
       if (mismatchCount >= 2) {
         await client.del(mismatchKey);
-        await this.usersService.banUser(userId, BAN_REASON);
-        this.logger.warn(
-          `Banned user ${userId} after gender verification mismatch`,
-        );
+        if (outcome.detectedGender) {
+          await this.usersService.banUserForGenderMismatch(
+            userId,
+            BAN_REASON,
+            outcome.detectedGender,
+          );
+          this.logger.warn(
+            `Banned user ${userId} after gender verification mismatch; profile gender set to ${outcome.detectedGender}`,
+          );
+        } else {
+          await this.usersService.banUser(userId, BAN_REASON);
+          this.logger.warn(
+            `Banned user ${userId} after gender verification mismatch`,
+          );
+        }
         return { verificationPassed: false, accountBanned: true };
       }
 

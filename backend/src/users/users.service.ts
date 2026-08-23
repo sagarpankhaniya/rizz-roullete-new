@@ -158,6 +158,28 @@ export class UsersService {
     return user;
   }
 
+  /** Ban after gender verification mismatch and align profile gender with detection. */
+  async banUserForGenderMismatch(
+    userId: string,
+    reason: string,
+    detectedGender: 'male' | 'female',
+  ): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        {
+          isBanned: true,
+          banReason: reason,
+          bannedAt: new Date(),
+          gender: detectedGender,
+        },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
   async unbanUser(userId: string): Promise<UserDocument> {
     const user = await this.userModel
       .findByIdAndUpdate(
