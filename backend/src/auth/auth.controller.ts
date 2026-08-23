@@ -11,6 +11,7 @@ import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleAuthDto } from './dto/google-auth.dto';
 import { UnbanRequestDto } from './dto/unban-request.dto';
 import { UsersService } from '../users/users.service';
 import {
@@ -66,6 +67,24 @@ export class AuthController {
   @Post('login')
   async login(@Body() body: LoginDto) {
     const result = await this.authService.login(body.email, body.password);
+    return { success: true, ...result };
+  }
+
+  @Post('auth/google')
+  async googleAuth(@Body() body: GoogleAuthDto, @Req() req: Request) {
+    const result = await this.authService.loginWithGoogle({
+      idToken: body.idToken,
+      gender: body.gender,
+      interestedIn: body.interestedIn,
+      inviteId: body.inviteId,
+      registrationIp: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
+
+    if ('needsGender' in result) {
+      return { success: false, ...result };
+    }
+
     return { success: true, ...result };
   }
 

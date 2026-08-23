@@ -5,6 +5,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { authHeaders, clearToken, getToken, setToken } from '../utils/auth';
 import { clearPendingCreator } from '../services/creators';
 import { apiUrl } from '../utils/api';
+import { authenticateWithGoogle } from '../services/googleAuth';
+import { GoogleSignInButton } from './auth/GoogleSignInButton';
 import { UnbanRequestModal } from './UnbanRequestModal';
 
 export type RoomMode = 'moderated' | 'unmoderated';
@@ -247,8 +249,16 @@ function SignupPanel({
   inviteError = null,
 }: SignupPanelProps) {
   const [isLogin, setIsLogin] = useState(false);
-  const [screen, setScreen] = useState<'signup' | 'plans' | 'payment'>('signup');
+  const [screen, setScreen] = useState<
+    'signup' | 'plans' | 'payment' | 'google-gender'
+  >('signup');
   const [selectedPlan, setSelectedPlan] = useState(plans[1].name);
+  const [googleIdToken, setGoogleIdToken] = useState<string | null>(null);
+  const [googleProfile, setGoogleProfile] = useState<{
+    firstName: string;
+    email: string;
+  } | null>(null);
+  const [googleGender, setGoogleGender] = useState('female');
   const [form, setForm] = useState({
     firstName: '',
     email: inviteEmail ?? '',
@@ -283,6 +293,62 @@ function SignupPanel({
   function planToApiId(planName: string) {
     if (planName === 'Weekly' || planName === 'Monthly') return 'monthly';
     return 'yearly';
+  }
+
+  async function handleGoogleIdToken(idToken: string, gender?: string) {
+    setStatus('');
+    setSubmitting(true);
+    try {
+      const result = await authenticateWithGoogle({
+        idToken,
+        gender,
+        interestedIn: form.interestedIn,
+        ...(inviteId ? { inviteId } : {}),
+      });
+
+      if (!result.success) {
+        if ('needsGender' in result && result.needsGender) {
+          setGoogleIdToken(idToken);
+          setGoogleProfile(result.profile);
+          setGoogleGender('female');
+          setScreen('google-gender');
+          return;
+        }
+        if ('code' in result && result.code === 'USER_BANNED') {
+          onBanned?.(googleProfile?.email ?? form.email.trim().toLowerCase());
+          return;
+        }
+        setStatus(
+          ('error' in result && result.error) || 'Google sign-in failed',
+        );
+        return;
+      }
+
+      setToken(result.token);
+      setGoogleIdToken(null);
+      setGoogleProfile(null);
+
+      const user = result.user as { gender?: string | null };
+      const userGender = user.gender ?? gender ?? form.gender;
+      const isMan = userGender === 'male';
+
+      if (result.isNewUser && isUnmod && isMan && !inviteId) {
+        setScreen('plans');
+        return;
+      }
+
+      onRegister?.(result.user, result.token);
+    } catch {
+      setStatus('Server error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function completeGoogleGenderSignup() {
+    if (!googleIdToken) return;
+    const gender = googleGender === 'other' ? 'male' : googleGender;
+    await handleGoogleIdToken(googleIdToken, gender);
   }
 
   async function registerAccount() {
@@ -378,8 +444,18 @@ function SignupPanel({
     if (selectedPlanMeta.free) {
       setSubmitting(true);
       try {
-        const result = await registerAccount();
-        onRegister?.(result.user, result.token);
+        if (!getToken()) {
+          const result = await registerAccount();
+          onRegister?.(result.user, result.token);
+        } else {
+          const profileRes = await fetch(apiUrl('/api/profile'), {
+            headers: authHeaders(),
+          });
+          const profileResult = await profileRes.json();
+          if (profileResult.success) {
+            onRegister?.(profileResult.user, getToken()!);
+          }
+        }
       } catch (err) {
         setStatus(err instanceof Error ? err.message : 'Server error');
       } finally {
@@ -409,7 +485,13 @@ function SignupPanel({
     setStatus('');
     setSubmitting(true);
     try {
-      const result = await registerAccount();
+      let token = getToken();
+      let user: unknown;
+      if (!token) {
+        const result = await registerAccount();
+        token = result.token;
+        user = result.user;
+      }
       const subRes = await fetch(apiUrl('/api/subscribe'), {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -424,7 +506,7 @@ function SignupPanel({
       if (!subResult.success) {
         throw new Error(subResult.error || 'Subscription failed');
       }
-      onRegister?.(subResult.user, result.token);
+      onRegister?.(subResult.user ?? user, token!);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Server error');
     } finally {
@@ -482,6 +564,11 @@ function SignupPanel({
               >
                 {submitting ? 'Logging in…' : 'Log In'}
               </button>
+              <GoogleSignInButton
+                disabled={submitting}
+                onIdToken={(token) => void handleGoogleIdToken(token)}
+                onError={() => setStatus('Google sign-in was cancelled or failed.')}
+              />
               <button
                 className="ghost-button"
                 type="button"
@@ -561,6 +648,11 @@ function SignupPanel({
                   >
                     {submitting ? 'Creating account…' : 'Verify Age & Continue'}
                   </button>
+                  <GoogleSignInButton
+                    disabled={submitting}
+                    onIdToken={(token) => void handleGoogleIdToken(token)}
+                    onError={() => setStatus('Google sign-in was cancelled or failed.')}
+                  />
                   <button className="ghost-button" type="button" onClick={onClose}>
                     Back to Landing
                   </button>
@@ -573,6 +665,56 @@ function SignupPanel({
                     }}
                   >
                     Already have an account? Log In
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {screen === 'google-gender' && (
+              <div className="flow-screen">
+                <h2>One More Step</h2>
+                <p>
+                  {googleProfile
+                    ? `Hi ${googleProfile.firstName}! Pick how you identify so we can run camera verification correctly.`
+                    : 'Pick how you identify so we can run camera verification correctly.'}
+                </p>
+                <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+                  <label className="full">
+                    I am
+                    <select
+                      name="googleGender"
+                      value={googleGender}
+                      onChange={(e) => setGoogleGender(e.target.value)}
+                    >
+                      <option value="female">A woman — VIP is free for you</option>
+                      <option value="male">A man</option>
+                      <option value="other">Prefer not to say</option>
+                    </select>
+                  </label>
+                </div>
+                <p className={`flow-status${status ? ' is-visible' : ''}`} aria-live="polite">
+                  {status}
+                </p>
+                <div className="flow-actions">
+                  <button
+                    className="hot-button"
+                    type="button"
+                    onClick={() => void completeGoogleGenderSignup()}
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Continuing…' : 'Continue'}
+                  </button>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => {
+                      setGoogleIdToken(null);
+                      setGoogleProfile(null);
+                      setScreen('signup');
+                      setStatus('');
+                    }}
+                  >
+                    Back
                   </button>
                 </div>
               </div>

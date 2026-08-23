@@ -1170,6 +1170,48 @@ h1 {
   margin-top: 18px;
 }
 
+.google-sign-in-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.google-sign-in-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.google-sign-in-wrap {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.google-sign-in-wrap > div {
+  width: 100%;
+}
+
+.google-sign-in-wrap iframe,
+.google-sign-in-wrap div[role="button"] {
+  width: 100% !important;
+  max-width: 100%;
+}
+
+.google-sign-in-button--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ── Plan Grid ───────────────────────────────────────────────── */
 
 .plan-grid {

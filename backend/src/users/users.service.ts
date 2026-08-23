@@ -38,6 +38,53 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase().trim() }).exec();
   }
 
+  async findByGoogleId(googleId: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ googleId }).exec();
+  }
+
+  async linkGoogleAccount(
+    userId: string,
+    googleId: string,
+  ): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { googleId, authProvider: 'google' },
+        { new: true },
+      )
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async createGoogleUser(data: {
+    firstName: string;
+    email: string;
+    googleId: string;
+    gender: string;
+    interestedIn: string;
+    photo?: string | null;
+    isVip?: boolean;
+    creatorInviteId?: string | null;
+    registrationIp?: string | null;
+    userAgent?: string | null;
+  }): Promise<UserDocument> {
+    return this.userModel.create({
+      firstName: data.firstName.trim(),
+      email: data.email.toLowerCase().trim(),
+      password: null,
+      authProvider: 'google',
+      googleId: data.googleId,
+      gender: data.gender,
+      interestedIn: data.interestedIn,
+      photo: data.photo ?? null,
+      isVip: Boolean(data.isVip),
+      creatorInviteId: data.creatorInviteId ?? null,
+      registrationIp: data.registrationIp ?? null,
+      userAgent: data.userAgent ?? null,
+    });
+  }
+
   async create(data: {
     firstName: string;
     email: string;

@@ -48,6 +48,10 @@ export class AdminAuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (!user.password) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
     const valid = await verifyPassword(password, user.password);
     if (!valid) {
       throw new UnauthorizedException('Invalid email or password');

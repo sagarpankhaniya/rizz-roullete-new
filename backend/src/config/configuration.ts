@@ -17,6 +17,10 @@ export default () => ({
     secret: process.env.JWT_SECRET,
   },
 
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  },
+
   mongodb: {
     uri: process.env.MONGODB_URI,
   },

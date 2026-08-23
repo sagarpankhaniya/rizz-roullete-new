@@ -13,8 +13,14 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email: string;
 
-  @Prop({ required: true })
-  password: string;
+  @Prop({ type: String, default: null })
+  password: string | null;
+
+  @Prop({ type: String, enum: ['local', 'google'], default: 'local' })
+  authProvider: 'local' | 'google';
+
+  @Prop({ type: String, default: null, sparse: true, unique: true })
+  googleId: string | null;
 
   @Prop({ type: String, enum: ['user', 'admin'], default: 'user', index: true })
   role: UserRole;
