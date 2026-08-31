@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Camera,
-  Crown,
   Flag,
   Globe,
   Heart,
@@ -836,13 +835,6 @@ export function CallApp({
 
   const closeTipSheet = () => setShowTipPicker(false);
 
-  const openSubscription = () => {
-    setShowSettings(false);
-    closeDesktopPickers();
-    closeTipSheet();
-    setShowSubscription(true);
-  };
-
   const restartSearchWithPref = useCallback(async () => {
     setShowNoMatch(false);
     setIsSkipping(true);
@@ -1290,17 +1282,6 @@ export function CallApp({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [showCountryPicker, showGenderPicker, showTagInput]);
 
-  const handleGoToDeck = async () => {
-    parkCameraStream(previewStreamRef.current);
-    previewStreamRef.current = null;
-    clearRemoteMedia();
-    await disconnect();
-    await leaveCall();
-    if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
-    setHasPreview(false);
-    navigate('/deck');
-  };
-
   const handleLeaveCreatorRoom = async () => {
     await exitCreatorRoom('deck');
   };
@@ -1469,16 +1450,6 @@ export function CallApp({
             {!isCreatorRoom && (
               <button
                 type="button"
-                className="creator-deck-link"
-                aria-label="Creator deck"
-                onClick={() => void handleGoToDeck()}
-              >
-                Creators
-              </button>
-            )}
-            {!isCreatorRoom && (
-              <button
-                type="button"
                 className={`mobile-settings-btn${isMobileView && hasActiveFilters ? ' settings-active' : ''}`}
                 onClick={openSettings}
                 aria-label="Match settings"
@@ -1594,15 +1565,6 @@ export function CallApp({
           </div>
         )}
         <p>{statusLine}</p>
-        {!isCreatorRoom && (
-        <button
-          className="unlock-button desktop-premium-btn"
-          type="button"
-          onClick={openSubscription}
-        >
-          <Crown size={16} /> Premium
-        </button>
-        )}
       </div>
 
       <main className="video-stage">
@@ -2103,14 +2065,6 @@ export function CallApp({
                 <X size={20} />
               </button>
             </div>
-
-            <button
-              type="button"
-              className="live-settings-premium unlock-button"
-              onClick={openSubscription}
-            >
-              <Crown size={16} /> Premium
-            </button>
 
             <section className="live-settings-section">
               <h4>Country</h4>

@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { authHeaders, clearToken, getToken, setToken } from '../utils/auth';
 import { clearPendingCreator } from '../services/creators';
 import { apiUrl } from '../utils/api';
@@ -872,7 +872,6 @@ export type LandingPageProps = {
 };
 
 export default function LandingPage({ mode, onModeChange, onRegister, pendingCreatorRoom }: LandingPageProps) {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const inviteIdFromUrl = searchParams.get('invite_id');
   const [flowOpen, setFlowOpen] = useState(() => Boolean(inviteIdFromUrl) || Boolean(pendingCreatorRoom));
@@ -939,16 +938,6 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
     setFlowOpen(true);
   };
 
-  const handleCreatorsClick = () => {
-    if (getToken()) {
-      navigate('/deck');
-      return;
-    }
-    clearPendingCreator();
-    setSignupDestination('deck');
-    setFlowOpen(true);
-  };
-
   const handleRegister = (userData: unknown, token: string) => {
     setFlowOpen(false);
     if (inviteIdFromUrl) {
@@ -1001,13 +990,6 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
             <span className="safety-pill">🪪 Age verified</span>
             <span className="safety-pill">🔒 Never recorded</span>
             <span className="safety-pill">⚑ Report &amp; block</span>
-            <button
-              className="safety-link"
-              type="button"
-              onClick={handleCreatorsClick}
-            >
-              Creators
-            </button>
             <button
               className="safety-link"
               type="button"
