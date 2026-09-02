@@ -8,12 +8,7 @@ import {
   type Creator,
 } from '../services/creators';
 import { getToken } from '../utils/auth';
-import {
-  enterCreatorRoom,
-  getCoinBalance,
-  ENTRY_FEE,
-} from '../services/coins';
-import { CoinPurchaseModal } from './CoinPurchaseModal';
+import { enterCreatorRoom } from '../services/coins';
 
 const LOGO_MAIN = '/assets/logo-main.jpeg';
 const LOGO_REVEAL = '/assets/logo-reveal.png';
@@ -24,8 +19,6 @@ export function CreatorProfile() {
   const [creator, setCreator] = useState<Creator | null>(null);
   const [loading, setLoading] = useState(true);
   const [entering, setEntering] = useState(false);
-  const [balance, setBalance] = useState<number | null>(null);
-  const [showPurchase, setShowPurchase] = useState(false);
   const [entryError, setEntryError] = useState('');
 
   useEffect(() => {
@@ -52,25 +45,14 @@ export function CreatorProfile() {
   }, [id]);
 
   useEffect(() => {
-    if (!getToken()) return;
-    clearPendingCreator();
-    getCoinBalance().then((res) => setBalance(res.balance));
+    if (getToken()) clearPendingCreator();
   }, []);
 
   const proceedToCall = () => {
     navigate('/creator-room');
   };
 
-  const handleEnterFailure = (result: {
-    code?: string;
-    error?: string;
-    balance?: number;
-  }) => {
-    if (result.code === 'INSUFFICIENT_COINS') {
-      setBalance(result.balance ?? 0);
-      setShowPurchase(true);
-      return;
-    }
+  const handleEnterFailure = (result: { code?: string; error?: string }) => {
     if (result.code === 'CREATOR_OFFLINE' || result.code === 'CREATOR_NOT_LIVE') {
       setEntryError(
         result.error ||
@@ -107,30 +89,6 @@ export function CreatorProfile() {
         return;
       }
 
-      setBalance(result.newBalance);
-      storeCreatorRoom({ id: result.creatorId, name: creator.name });
-      proceedToCall();
-    } catch {
-      setEntryError('Server error. Please try again.');
-    } finally {
-      setEntering(false);
-    }
-  };
-
-  const handlePurchaseSuccess = async (newBalance: number) => {
-    setBalance(newBalance);
-    setShowPurchase(false);
-    if (!creator || newBalance < ENTRY_FEE) return;
-
-    setEntering(true);
-    setEntryError('');
-    try {
-      const result = await enterCreatorRoom(creator.id);
-      if (!result.ok) {
-        handleEnterFailure(result);
-        return;
-      }
-      setBalance(result.newBalance);
       storeCreatorRoom({ id: result.creatorId, name: creator.name });
       proceedToCall();
     } catch {
@@ -166,7 +124,6 @@ export function CreatorProfile() {
   const genderLabel = creator.gender
     ? creator.gender.charAt(0).toUpperCase() + creator.gender.slice(1)
     : 'Creator';
-  const canAfford = balance === null || balance >= ENTRY_FEE;
 
   return (
     <div className="profile-body">
@@ -211,18 +168,9 @@ export function CreatorProfile() {
             <p className="bio">{creator.bio}</p>
             <p className="browse-note">
               {creator.isOnline
-                ? `Browse free · ${ENTRY_FEE.toLocaleString()} coins to enter her room`
+                ? 'Browse free · enter her room when she is live'
                 : 'Browse free · she goes live after dark'}
             </p>
-
-            {getToken() && balance !== null && (
-              <div className="wallet-row">
-                <span>Your balance: <b>{balance.toLocaleString()}</b> coins</span>
-                {creator.isOnline && (
-                  <span className="entry-fee">Entry: {ENTRY_FEE.toLocaleString()} coins</span>
-                )}
-              </div>
-            )}
 
             {entryError && <p className="entry-error">{entryError}</p>}
 
@@ -234,11 +182,7 @@ export function CreatorProfile() {
                   onClick={() => void enterRoom()}
                   disabled={entering}
                 >
-                  {entering
-                    ? 'OPENING ROOM…'
-                    : canAfford
-                      ? 'SPIN INTO HER ROOM'
-                      : 'GET COINS TO ENTER'}
+                  {entering ? 'OPENING ROOM…' : 'SPIN INTO HER ROOM'}
                 </button>
               )}
               <Link to="/deck" className="btn btn-ghost" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
@@ -255,7 +199,7 @@ export function CreatorProfile() {
         <section className="strip reveal in" aria-label="Quick facts">
           <div><b>{genderLabel.toUpperCase()}</b><small>creator profile</small></div>
           <div><b>{locationLabel}</b><small>{creator.country ? 'based here' : 'location TBD'}</small></div>
-          <div><b>80% TO HER</b><small>every tip goes to the creator</small></div>
+          <div><b>VERIFIED</b><small>every creator is 18+ verified</small></div>
         </section>
 
         <div className="foot-badge reveal in">
@@ -268,13 +212,6 @@ export function CreatorProfile() {
           <p>&copy; 2026 Rizz Roulette LLC · RTA-labeled · All creators verified 18+</p>
         </footer>
       </div>
-
-      {showPurchase && (
-        <CoinPurchaseModal
-          onClose={() => setShowPurchase(false)}
-          onSuccess={handlePurchaseSuccess}
-        />
-      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=Special+Elite&display=swap');
@@ -316,9 +253,6 @@ export function CreatorProfile() {
         .whisper{font-family:'Bebas Neue',sans-serif;font-size:clamp(20px,2.6vw,26px);letter-spacing:.08em;color:var(--hot);text-shadow:0 0 14px var(--glow);margin:18px 0 6px}
         .bio{color:var(--dim);font-size:15.5px;line-height:1.8;max-width:52ch;margin-top:12px}
         .browse-note{margin-top:10px;font-family:'Bebas Neue',sans-serif;letter-spacing:.12em;font-size:14px;color:var(--pink);opacity:.85}
-        .wallet-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;font-size:14px;color:var(--dim)}
-        .wallet-row b{color:var(--hot);font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.04em}
-        .entry-fee{color:var(--pink);font-family:'Bebas Neue',sans-serif;letter-spacing:.08em}
         .entry-error{color:#ff6b6b;margin-top:12px;font-size:14px}
         .cta-row{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
         .btn{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.1em;padding:15px 30px;border-radius:6px;cursor:pointer;border:none;transition:transform .15s,box-shadow .2s}

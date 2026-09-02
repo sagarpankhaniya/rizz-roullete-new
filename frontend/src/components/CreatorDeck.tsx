@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { fetchCreators as loadCreators, type Creator } from '../services/creators';
-import { CoinWalletChip } from './CoinWalletChip';
 
 const LOGO_MAIN = '/assets/logo-main.jpeg';
 const LOGO_REVEAL = '/assets/logo-reveal.png';
@@ -102,7 +101,6 @@ export function CreatorDeck() {
             </div>
           </a>
           <div className="nav-actions">
-            <CoinWalletChip />
             <button type="button" onClick={() => navigate('/match')} className="back-link">
               <ArrowLeft size={14} style={{ marginRight: 4 }} /> BACK
             </button>
@@ -128,7 +126,7 @@ export function CreatorDeck() {
           <p className="sub">
             {loading
               ? 'Shuffling the deck…'
-              : `${cardCount} cards face-down · browse free · coins only to enter her room`}
+              : `${cardCount} cards face-down · browse free · enter a room when she is live`}
           </p>
 
           <div className="controls">

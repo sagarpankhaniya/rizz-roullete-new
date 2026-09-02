@@ -10,8 +10,6 @@ import { CreatorsService } from '../creators/creators.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { BuyCoinsDto } from './dto/buy-coins.dto';
 import {
-  CREATOR_ENTRY_FEE,
-  CREATOR_ENTRY_SHARE,
   CREATOR_TIP_SHARE,
 } from './coins.constants';
 import { CoinTransactionsService } from './coin-transactions.service';
@@ -116,41 +114,10 @@ export class CoinsService {
       });
     }
 
-    const balance = user.coins || 0;
-    if (balance < CREATOR_ENTRY_FEE) {
-      throw new BadRequestException({
-        code: 'INSUFFICIENT_COINS',
-        message: `You need ${CREATOR_ENTRY_FEE} coins to enter this room.`,
-        required: CREATOR_ENTRY_FEE,
-        balance,
-      });
-    }
-
-    const creatorAmount = Math.floor(CREATOR_ENTRY_FEE * CREATOR_ENTRY_SHARE);
-    const platformAmount = CREATOR_ENTRY_FEE - creatorAmount;
-
-    user.coins = balance - CREATOR_ENTRY_FEE;
-    creator.creatorEarnings =
-      (creator.creatorEarnings || 0) + creatorAmount;
-
-    await Promise.all([user.save(), creator.save()]);
-
-    await this.transactions.record({
-      type: 'entry_fee',
-      userId,
-      creatorId: resolvedCreatorId,
-      amount: CREATOR_ENTRY_FEE,
-      creatorAmount,
-      platformAmount,
-      balanceAfter: user.coins,
-      counterpartyName: creator.firstName,
-      note: 'Room entry',
-    });
-
     return {
       success: true,
-      newBalance: user.coins,
-      entryFee: CREATOR_ENTRY_FEE,
+      newBalance: user.coins || 0,
+      entryFee: 0,
       creatorId: resolvedCreatorId,
       creatorName: creator.firstName,
     };

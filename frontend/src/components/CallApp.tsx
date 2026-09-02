@@ -24,19 +24,14 @@ import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
 import { getSocket } from '../services/socket';
 import { COUNTRIES } from '../data/countries';
 import type { RoomMode } from './LandingPage';
-import { CoinModule } from './CoinModule';
-import { CoinWalletChip } from './CoinWalletChip';
-import { SubscriptionModal } from './SubscriptionModal';
 import { clearCreatorSession } from '../services/creators';
 import { UnbanRequestModal } from './UnbanRequestModal';
 import { ReportModal } from './ReportModal';
 import {
   clearStoredUser,
   getStoredUser,
-  isUserSubscribed,
   isUserVip,
   setStoredUser,
-  type StoredUser,
 } from '../utils/user';
 import { updateMatchPreference } from '../services/profile';
 import {
@@ -62,12 +57,10 @@ import {
   loadChatTranslateLanguage,
   saveChatTranslateLanguage,
 } from '../utils/chatTranslation';
-import { getCreatorEarnings } from '../services/coins';
 import { createPortal } from 'react-dom';
 import {
   SOCKET_EVENTS,
   type ChatMessagePayload,
-  type TipReceivedPayload,
   type CreatorFanWaitingPayload,
 } from '../types/events';
 
@@ -171,7 +164,6 @@ export function CallApp({
     'user',
   );
   const [showSettings, setShowSettings] = useState(false);
-  const [showSubscription, setShowSubscription] = useState(false);
   const [isMobileView, setIsMobileView] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -180,12 +172,8 @@ export function CallApp({
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [showTagInput, setShowTagInput] = useState(false);
-  const [showTipPicker, setShowTipPicker] = useState(false);
-  const [showCreatorCoins, setShowCreatorCoins] = useState(false);
   const [showCreatorLeaveModal, setShowCreatorLeaveModal] = useState(false);
-  const [isSubscribed, setIsSubscribed] = useState(() => isUserSubscribed());
   const [isVip] = useState(() => isUserVip());
-  const [pendingPref, setPendingPref] = useState<string | null>(null);
   const [prefUpdating, setPrefUpdating] = useState(false);
   // Live preference — drives matching after PATCH /api/profile/preference
   const [genderPref, setGenderPref] = useState(() => {
@@ -202,10 +190,6 @@ export function CallApp({
   const [countrySearch, setCountrySearch] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
-  const [selectedTip, setSelectedTip] = useState<string | null>(null);
-  const [customTip, setCustomTip] = useState('');
-  const [tipStatus, setTipStatus] = useState('');
-  const [tipSending, setTipSending] = useState(false);
   const [genderCheck, setGenderCheck] = useState<{
     status: GenderCheckStatus;
     message: string;
@@ -215,13 +199,6 @@ export function CallApp({
   });
   const [unbanEmail, setUnbanEmail] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [tipToast, setTipToast] = useState<{
-    amount: string;
-    creatorReceived?: string;
-    fromIdentity: string;
-  } | null>(null);
-  const [sessionEarnings, setSessionEarnings] = useState(0);
-  const [lifetimeEarnings, setLifetimeEarnings] = useState<number | null>(null);
   const [fanWaitingMsg, setFanWaitingMsg] = useState<string | null>(null);
 
   const stopPreview = useCallback(() => {
@@ -726,36 +703,11 @@ export function CallApp({
       }
     };
 
-    const onTipReceived = (payload: TipReceivedPayload) => {
-      const amount = payload?.amount?.trim();
-      const fromIdentity = payload?.fromIdentity?.trim() || 'Someone';
-      if (!amount) return;
-      const gross = Number.parseInt(amount, 10);
-      const creditedRaw = Number.parseInt(payload.creatorReceived?.trim() || '', 10);
-      const earned =
-        Number.isFinite(creditedRaw) && creditedRaw > 0
-          ? creditedRaw
-          : Number.isFinite(gross)
-            ? Math.floor(gross * 0.8)
-            : 0;
-      if (earned > 0) {
-        setSessionEarnings((prev) => prev + earned);
-        setLifetimeEarnings((prev) =>
-          prev === null ? earned : prev + earned,
-        );
-      }
-      setTipToast({
-        amount,
-        creatorReceived: payload.creatorReceived,
-        fromIdentity,
-      });
-    };
-
     const onFanWaiting = (payload: CreatorFanWaitingPayload) => {
       if (!isVip) return;
       const msg =
         payload?.message?.trim() ||
-        `${payload?.fanIdentity || 'A fan'} paid to enter your room.`;
+        `${payload?.fanIdentity || 'A fan'} is waiting in your room.`;
       setFanWaitingMsg(msg);
       if (
         genderCheck.status === 'verified' &&
@@ -766,11 +718,9 @@ export function CallApp({
     };
 
     socket.on(SOCKET_EVENTS.CHAT_MESSAGE, onChatMessage);
-    socket.on(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
     socket.on(SOCKET_EVENTS.CREATOR_FAN_WAITING, onFanWaiting);
     return () => {
       socket.off(SOCKET_EVENTS.CHAT_MESSAGE, onChatMessage);
-      socket.off(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
       socket.off(SOCKET_EVENTS.CREATOR_FAN_WAITING, onFanWaiting);
     };
   }, [genderCheck.status, isVip, phase, startCall]);
@@ -779,19 +729,6 @@ export function CallApp({
     const msg = consumeCreatorFanWaitingMessage();
     if (msg) setFanWaitingMsg(msg);
   }, []);
-
-  useEffect(() => {
-    if (!isVip) return;
-    getCreatorEarnings().then((data) => {
-      if (data) setLifetimeEarnings(data.lifetimeEarnings);
-    });
-  }, [isVip]);
-
-  useEffect(() => {
-    if (phase === 'idle' || phase === 'partner_left') {
-      setSessionEarnings(0);
-    }
-  }, [phase]);
 
   useEffect(() => {
     if (!fanWaitingMsg) return;
@@ -807,12 +744,6 @@ export function CallApp({
   }, [fanWaitingMsg]);
 
   useEffect(() => {
-    if (!tipToast) return;
-    const timer = window.setTimeout(() => setTipToast(null), 5200);
-    return () => window.clearTimeout(timer);
-  }, [tipToast]);
-
-  useEffect(() => {
     if (!showChat) return;
     chatMessagesRef.current?.scrollTo({
       top: chatMessagesRef.current.scrollHeight,
@@ -823,7 +754,6 @@ export function CallApp({
   const openSettings = () => {
     // Desktop uses inline filter pills — settings sheet is mobile-only (matches client)
     if (!isMobileView) return;
-    closeTipSheet();
     setShowSettings(true);
   };
 
@@ -832,8 +762,6 @@ export function CallApp({
     setShowGenderPicker(false);
     setShowTagInput(false);
   };
-
-  const closeTipSheet = () => setShowTipPicker(false);
 
   const restartSearchWithPref = useCallback(async () => {
     setShowNoMatch(false);
@@ -851,17 +779,9 @@ export function CallApp({
       setPrefUpdating(true);
       try {
         const result = await updateMatchPreference(nextPref);
-        if (!result.ok) {
-          if (result.code === 'SUBSCRIPTION_REQUIRED') {
-            setPendingPref(nextPref);
-            setShowSubscription(true);
-            return;
-          }
-          return;
-        }
+        if (!result.ok) return;
         setGenderPref(nextPref);
         setStoredUser(result.user);
-        setIsSubscribed(Boolean(result.user.isSubscribed));
         setShowGenderPicker(false);
         setShowSettings(false);
         await restartSearchWithPref();
@@ -875,31 +795,9 @@ export function CallApp({
   const requestPreferenceChange = useCallback(
     (nextPref: string) => {
       if (nextPref === genderPref || prefUpdating) return;
-      const isFreePref =
-        nextPref === 'everyone' || nextPref === 'couple' || nextPref === 'other';
-      if (!isSubscribed && !isFreePref) {
-        setPendingPref(nextPref);
-        setShowSettings(false);
-        closeDesktopPickers();
-        setShowSubscription(true);
-        return;
-      }
       void applyPreferenceChange(nextPref);
     },
-    [applyPreferenceChange, genderPref, isSubscribed, prefUpdating],
-  );
-
-  const handleSubscribed = useCallback(
-    (user: StoredUser) => {
-      setStoredUser(user);
-      setIsSubscribed(true);
-      const next = pendingPref;
-      setPendingPref(null);
-      if (next) {
-        void applyPreferenceChange(next);
-      }
-    },
-    [applyPreferenceChange, pendingPref],
+    [applyPreferenceChange, genderPref, prefUpdating],
   );
 
   const addTag = (e: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -916,57 +814,9 @@ export function CallApp({
     setTags(tags.filter((t) => t !== tag));
   };
 
-  const TIP_PRESETS = [
-    { id: '20', label: '$20' },
-    { id: '30', label: '$30' },
-    { id: '10', label: '$10' },
-  ] as const;
-
-  const resolveTipAmount = () => {
-    if (selectedTip === 'custom') {
-      const raw = customTip.trim();
-      if (!raw) return null;
-      return raw.startsWith('$') ? raw : `$${raw}`;
-    }
-    return TIP_PRESETS.find((p) => p.id === selectedTip)?.label ?? null;
-  };
-
-  const sendTip = async () => {
-    const amount = resolveTipAmount();
-    if (!amount) {
-      setTipStatus('Choose a tip amount or enter a custom one.');
-      return;
-    }
-    if (!match?.partnerIsVip) {
-      setTipStatus('Tips are only for VIP creators.');
-      return;
-    }
-    if (!isConnected) {
-      setTipStatus('Connect to a match before tipping.');
-      return;
-    }
-
-    setTipSending(true);
-    setTipStatus('');
-    try {
-      getSocket().emit(SOCKET_EVENTS.SEND_TIP, { amount });
-      setTipStatus(`Tip ${amount} sent to ${match.partnerIdentity}!`);
-      setSelectedTip(null);
-      setCustomTip('');
-    } catch {
-      setTipStatus('Could not send tip. Try again.');
-    } finally {
-      setTipSending(false);
-    }
-  };
-
   // Reset feed-ready whenever we leave a room / get a new match
   useEffect(() => {
     setPartnerFeedReady(false);
-    setShowTipPicker(false);
-    setSelectedTip(null);
-    setCustomTip('');
-    setTipStatus('');
   }, [match?.sessionId]);
 
   // Reveal partner video only after the first decoded frame (avoids black → flash).
@@ -1243,16 +1093,15 @@ export function CallApp({
   }, [isConnected, isSkipping, hasPreview]);
 
   useEffect(() => {
-    if (!showSettings && !showTipPicker) return;
+    if (!showSettings) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closeSettings();
-        closeTipSheet();
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [showSettings, showTipPicker]);
+  }, [showSettings]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
@@ -1288,7 +1137,6 @@ export function CallApp({
 
   const exitCreatorRoom = async (destination: 'deck' | 'match') => {
     setShowCreatorLeaveModal(false);
-    setShowCreatorCoins(false);
     setPartnerFeedReady(false);
     parkCameraStream(previewStreamRef.current);
     previewStreamRef.current = null;
@@ -1310,7 +1158,6 @@ export function CallApp({
   useEffect(() => {
     if (!isCreatorPartnerLeft) return;
     setPartnerFeedReady(false);
-    setShowCreatorCoins(false);
   }, [isCreatorPartnerLeft]);
 
   const handleClose = async () => {
@@ -1445,7 +1292,6 @@ export function CallApp({
           <i className="connection-dot" style={{ opacity: 1 }} />
         </div>
         <div className="live-header-actions">
-          <CoinWalletChip variant="compact" className="live-header-coins" />
           <div className="live-header-top-btns">
             {!isCreatorRoom && (
               <button
@@ -1507,7 +1353,6 @@ export function CallApp({
               className="report-hero-btn"
               onClick={() => {
                 setShowReportModal(true);
-                setShowTipPicker(false);
                 setShowSettings(false);
                 closeDesktopPickers();
               }}
@@ -1517,22 +1362,6 @@ export function CallApp({
             </button>
           )}
 
-          {Boolean(match?.partnerIsVip) && !isCreatorRoom && (
-            <button
-              type="button"
-              className={`tip-hero-btn${showTipPicker ? ' active' : ''}`}
-              onClick={() => {
-                setShowTipPicker((v) => !v);
-                setShowSettings(false);
-                closeDesktopPickers();
-                setTipStatus('');
-              }}
-              aria-pressed={showTipPicker}
-              aria-label="Tip VIP creator"
-            >
-              💸 Tip
-            </button>
-          )}
         </div>
         )}
         {isCreatorRoom && isConnected && Boolean(match?.partnerUserId) && (
@@ -1542,7 +1371,6 @@ export function CallApp({
               className="report-hero-btn"
               onClick={() => {
                 setShowReportModal(true);
-                setShowTipPicker(false);
                 setShowSettings(false);
                 closeDesktopPickers();
               }}
@@ -1552,24 +1380,12 @@ export function CallApp({
             </button>
           </div>
         )}
-        {isVip && isConnected && (
-          <div className="creator-earnings-strip" aria-live="polite">
-            <span>
-              This call: <b>{sessionEarnings.toLocaleString()}</b> coins
-            </span>
-            {lifetimeEarnings !== null && (
-              <span>
-                Lifetime: <b>{lifetimeEarnings.toLocaleString()}</b> coins
-              </span>
-            )}
-          </div>
-        )}
         <p>{statusLine}</p>
       </div>
 
       <main className="video-stage">
         <section
-          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${isCreatorWaiting ? ' creator-waiting' : ''}${isCreatorRoom && showCreatorCoins ? ' coins-open' : ''}${verifyFailed ? ' verify-failed' : ''}`}
+          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${isCreatorWaiting ? ' creator-waiting' : ''}${verifyFailed ? ' verify-failed' : ''}`}
           aria-label="Partner video"
         >
           <div className="partner-photo" aria-hidden="true" />
@@ -1677,7 +1493,6 @@ export function CallApp({
                   setShowCountryPicker((v) => !v);
                   setShowGenderPicker(false);
                   setShowTagInput(false);
-                  setShowTipPicker(false);
                   setCountrySearch('');
                 }}
               >
@@ -1731,7 +1546,6 @@ export function CallApp({
                   setShowGenderPicker((v) => !v);
                   setShowCountryPicker(false);
                   setShowTagInput(false);
-                  setShowTipPicker(false);
                 }}
               >
                 {prefLabel}
@@ -1763,7 +1577,6 @@ export function CallApp({
                   setShowTagInput((v) => !v);
                   setShowCountryPicker(false);
                   setShowGenderPicker(false);
-                  setShowTipPicker(false);
                 }}
               >
                 {tags.length > 0
@@ -1807,19 +1620,10 @@ export function CallApp({
           </div>
           )}
 
-          {isCreatorRoom && showCreatorCoins && (
-            <CoinModule
-              partnerIdentity={creatorName}
-              tipsEnabled={isConnected && partnerFeedReady}
-            />
-          )}
-
-          {!(isCreatorRoom && showCreatorCoins) && (
           <div className="partner-copy">
             <strong>{partnerTitle}</strong>
             <span>{partnerSubtitle}</span>
           </div>
-          )}
         </section>
 
         <section
@@ -1930,26 +1734,6 @@ export function CallApp({
           <Heart size={22} />
           <span className="control-label">{liked ? 'Liked' : 'Like'}</span>
         </button>
-        {isCreatorRoom && (
-          <button
-            type="button"
-            className={`bottom-control-item tip-control${showCreatorCoins ? ' active' : ''}`}
-            onClick={() => {
-              setShowCreatorCoins((v) => {
-                const next = !v;
-                if (next) setShowChat(false);
-                return next;
-              });
-            }}
-            aria-pressed={showCreatorCoins}
-            aria-label={showCreatorCoins ? 'Hide tips and coins' : 'Show tips and coins'}
-          >
-            <span className="control-icon" aria-hidden="true">
-              🪙
-            </span>
-            <span className="control-label">Tips</span>
-          </button>
-        )}
         <button
           type="button"
           className={`bottom-control-item${!micEnabled ? ' media-off' : ''}`}
@@ -2155,71 +1939,6 @@ export function CallApp({
         </div>
       )}
 
-      {showTipPicker && Boolean(match?.partnerIsVip) && !isCreatorRoom && (
-        <div
-          className="live-settings-overlay tip-sheet-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="tip-sheet-title"
-          onClick={() => setShowTipPicker(false)}
-        >
-          <div
-            className="live-settings-panel tip-sheet-panel"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="live-settings-head">
-              <h3 id="tip-sheet-title">Tip Creator</h3>
-              <button
-                type="button"
-                onClick={() => setShowTipPicker(false)}
-                aria-label="Close tip"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <p className="live-settings-current">
-              Tip VIP {match?.partnerIdentity || 'creator'}
-            </p>
-            <div className="live-settings-options tip-options tip-sheet-options">
-              {TIP_PRESETS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={selectedTip === opt.id ? 'sel' : ''}
-                  onClick={() => {
-                    setSelectedTip(opt.id);
-                    setCustomTip('');
-                    setTipStatus('');
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              className="live-settings-input"
-              inputMode="decimal"
-              placeholder="Custom amount…"
-              value={customTip}
-              onChange={(e) => {
-                setCustomTip(e.target.value);
-                setSelectedTip('custom');
-                setTipStatus('');
-              }}
-            />
-            <button
-              type="button"
-              className="tip-send-btn tip-sheet-send"
-              onClick={() => void sendTip()}
-              disabled={tipSending}
-            >
-              {tipSending ? 'Sending…' : 'Send Tip'}
-            </button>
-            {tipStatus && <p className="tip-status tip-sheet-status">{tipStatus}</p>}
-          </div>
-        </div>
-      )}
       {genderCheck.status === 'banned' &&
         (unbanEmail
           ? createPortal(
@@ -2322,22 +2041,6 @@ export function CallApp({
           </div>
         </div>
       )}
-      {showSubscription && (
-        <SubscriptionModal
-          mode={mode}
-          onClose={() => {
-            setShowSubscription(false);
-            setPendingPref(null);
-          }}
-          onSubscribed={handleSubscribed}
-          onBackToLanding={() => {
-            setShowSubscription(false);
-            setPendingPref(null);
-            void handleClose();
-          }}
-        />
-      )}
-
       {fanWaitingMsg && (
         <div className="tip-toast fan-waiting-toast" role="status" aria-live="polite">
           <div className="tip-toast-glow" aria-hidden="true" />
@@ -2353,36 +2056,6 @@ export function CallApp({
             className="tip-toast-close"
             onClick={() => setFanWaitingMsg(null)}
             aria-label="Dismiss notification"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {tipToast && (
-        <div className="tip-toast" role="status" aria-live="polite">
-          <div className="tip-toast-glow" aria-hidden="true" />
-          <div className="tip-toast-icon" aria-hidden="true">
-            💸
-          </div>
-          <div className="tip-toast-copy">
-            <strong>New tip received!</strong>
-            <span>
-              <b>{tipToast.fromIdentity}</b> sent{' '}
-              <em>{tipToast.amount}</em>
-              {tipToast.creatorReceived && (
-                <>
-                  {' '}
-                  — you earned <em>{tipToast.creatorReceived}</em> coins
-                </>
-              )}
-            </span>
-          </div>
-          <button
-            type="button"
-            className="tip-toast-close"
-            onClick={() => setTipToast(null)}
-            aria-label="Dismiss tip notification"
           >
             <X size={16} />
           </button>

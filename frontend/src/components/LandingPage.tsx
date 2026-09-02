@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { authHeaders, clearToken, getToken, setToken } from '../utils/auth';
+import { clearToken, setToken } from '../utils/auth';
 import { clearPendingCreator } from '../services/creators';
 import { apiUrl } from '../utils/api';
 import { authenticateWithGoogle } from '../services/googleAuth';
@@ -51,46 +51,9 @@ const modes: Record<RoomMode, ModeConfig> = {
     warning:
       'Verified adults only • Consent required on every call • Report, block and blur always on screen • Nothing recorded, nothing stored',
     signupCopy:
-      'Pick a username and clear ID verification. Men choose a subscription next — women get VIP free.',
+      'Pick a username and clear ID verification. That is the whole sign-up.',
   },
 };
-const plans = [
-  {
-    id: 'women-vip',
-    name: 'Women VIP',
-    price: '$0',
-    detail: 'Every feature, every filter, no card needed. Forever.',
-    free: true,
-  },
-  {
-    id: 'weekly',
-    name: 'Weekly',
-    price: '$10',
-    detail: 'Seven days in the 18+ room.',
-    free: false,
-  },
-  {
-    id: 'monthly',
-    name: 'Monthly',
-    price: '$20',
-    detail: 'Rolling, cancel any time.',
-    free: false,
-  },
-  {
-    id: '6-monthly',
-    name: '6 Monthly',
-    price: '$100',
-    detail: 'Works out at $16.60 a month.',
-    free: false,
-  },
-  {
-    id: 'yearly',
-    name: '1 Year',
-    price: '$150',
-    detail: 'Best value at $12.50 a month.',
-    free: false,
-  },
-];
 
 const SAFETY_TOOLS = [
   {
@@ -249,10 +212,7 @@ function SignupPanel({
   inviteError = null,
 }: SignupPanelProps) {
   const [isLogin, setIsLogin] = useState(false);
-  const [screen, setScreen] = useState<
-    'signup' | 'plans' | 'payment' | 'google-gender'
-  >('signup');
-  const [selectedPlan, setSelectedPlan] = useState(plans[1].name);
+  const [screen, setScreen] = useState<'signup' | 'google-gender'>('signup');
   const [googleIdToken, setGoogleIdToken] = useState<string | null>(null);
   const [googleProfile, setGoogleProfile] = useState<{
     firstName: string;
@@ -266,34 +226,15 @@ function SignupPanel({
     gender: 'female',
     interestedIn: 'everyone',
   });
-  const [cardData, setCardData] = useState({
-    nameOnCard: '',
-    cardNumber: '',
-    expiry: '',
-    cvc: '',
-  });
   const [status, setStatus] = useState(inviteError ?? '');
   const [submitting, setSubmitting] = useState(false);
 
-  const isUnmod = mode === 'unmoderated';
-  const isWoman = form.gender === 'female';
   const active = modes[mode];
-  const selectedPlanMeta = plans.find((plan) => plan.name === selectedPlan) ?? plans[1];
 
   const handleFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
-
-  const handleCardChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setCardData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  function planToApiId(planName: string) {
-    if (planName === 'Weekly' || planName === 'Monthly') return 'monthly';
-    return 'yearly';
-  }
 
   async function handleGoogleIdToken(idToken: string, gender?: string) {
     setStatus('');
@@ -327,15 +268,6 @@ function SignupPanel({
       setToken(result.token);
       setGoogleIdToken(null);
       setGoogleProfile(null);
-
-      const user = result.user as { gender?: string | null };
-      const userGender = user.gender ?? gender ?? form.gender;
-      const isMan = userGender === 'male';
-
-      if (result.isNewUser && isUnmod && isMan && !inviteId) {
-        setScreen('plans');
-        return;
-      }
 
       onRegister?.(result.user, result.token);
     } catch {
@@ -423,90 +355,10 @@ function SignupPanel({
     }
     setStatus('');
 
-    // Unmoderated men pay; women get VIP free (matches design flow).
-    if (isUnmod && !isWoman && !inviteId) {
-      setScreen('plans');
-      return;
-    }
-
     setSubmitting(true);
     try {
       const result = await registerAccount();
       onRegister?.(result.user, result.token);
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Server error');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function completePayment() {
-    if (selectedPlanMeta.free) {
-      setSubmitting(true);
-      try {
-        if (!getToken()) {
-          const result = await registerAccount();
-          onRegister?.(result.user, result.token);
-        } else {
-          const profileRes = await fetch(apiUrl('/api/profile'), {
-            headers: authHeaders(),
-          });
-          const profileResult = await profileRes.json();
-          if (profileResult.success) {
-            onRegister?.(profileResult.user, getToken()!);
-          }
-        }
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : 'Server error');
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
-
-    const { nameOnCard, cardNumber, expiry, cvc } = cardData;
-    if (!nameOnCard.trim() || !cardNumber.trim() || !expiry.trim() || !cvc.trim()) {
-      setStatus('Please fill in all card details.');
-      return;
-    }
-    if (!/^\d{13,19}$/.test(cardNumber.replace(/\s/g, ''))) {
-      setStatus('Enter a valid card number.');
-      return;
-    }
-    if (!/^\d{2}\/\d{2}$/.test(expiry.trim())) {
-      setStatus('Expiry must be in MM/YY format.');
-      return;
-    }
-    if (!/^\d{3,4}$/.test(cvc.trim())) {
-      setStatus('Enter a valid CVC.');
-      return;
-    }
-
-    setStatus('');
-    setSubmitting(true);
-    try {
-      let token = getToken();
-      let user: unknown;
-      if (!token) {
-        const result = await registerAccount();
-        token = result.token;
-        user = result.user;
-      }
-      const subRes = await fetch(apiUrl('/api/subscribe'), {
-        method: 'POST',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          plan: planToApiId(selectedPlan),
-          nameOnCard: nameOnCard.trim(),
-          cardNumber: cardNumber.replace(/\s/g, ''),
-          expiry: expiry.trim(),
-        }),
-      });
-      const subResult = await subRes.json();
-      if (!subResult.success) {
-        throw new Error(subResult.error || 'Subscription failed');
-      }
-      onRegister?.(subResult.user ?? user, token!);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Server error');
     } finally {
@@ -720,143 +572,6 @@ function SignupPanel({
               </div>
             )}
 
-            {screen === 'plans' && (
-              <div className="flow-screen">
-                <h2>Choose Your Access</h2>
-                <p>
-                  The standard room is always free. The 18+ room needs a subscription for men —
-                  women get full VIP access at no cost, permanently.
-                </p>
-                <div className="plan-grid plan-grid-five">
-                  {plans.map((plan) => (
-                    <button
-                      className={`${selectedPlan === plan.name ? 'selected' : ''}${plan.free ? ' plan-free' : ''}`}
-                      key={plan.id}
-                      type="button"
-                      onClick={() => setSelectedPlan(plan.name)}
-                    >
-                      <strong>{plan.price}</strong>
-                      <span>{plan.name === 'Women VIP' ? 'Women — free VIP' : plan.name}</span>
-                      <small>{plan.detail}</small>
-                    </button>
-                  ))}
-                </div>
-                <div className="flow-actions">
-                  <button
-                    className="hot-button"
-                    type="button"
-                    onClick={() => {
-                      setStatus('');
-                      if (selectedPlanMeta.free) {
-                        void completePayment();
-                        return;
-                      }
-                      setScreen('payment');
-                    }}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Continuing…' : 'Continue to Payment'}
-                  </button>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => setScreen('signup')}
-                  >
-                    Back
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {screen === 'payment' && (
-              <div className="flow-screen payment-screen">
-                <h2>Payment</h2>
-                <p>
-                  {selectedPlanMeta.free
-                    ? 'Women VIP selected — $0. No card is collected. Continue to enter the 18+ room.'
-                    : `${selectedPlanMeta.name} — ${selectedPlanMeta.price}. Demo checkout; in production this hands off to your live processor.`}
-                </p>
-                {!selectedPlanMeta.free && (
-                  <div className="form-grid">
-                    <label className="full">
-                      Name on Card
-                      <input
-                        name="nameOnCard"
-                        value={cardData.nameOnCard}
-                        onChange={handleCardChange}
-                        type="text"
-                        placeholder="Full name"
-                        autoComplete="cc-name"
-                      />
-                    </label>
-                    <label className="full">
-                      Card Number
-                      <input
-                        name="cardNumber"
-                        value={cardData.cardNumber}
-                        onChange={handleCardChange}
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="4242 4242 4242 4242"
-                        autoComplete="cc-number"
-                      />
-                    </label>
-                    <label>
-                      Expiry
-                      <input
-                        name="expiry"
-                        value={cardData.expiry}
-                        onChange={handleCardChange}
-                        type="text"
-                        placeholder="MM/YY"
-                        autoComplete="cc-exp"
-                      />
-                    </label>
-                    <label>
-                      CVC
-                      <input
-                        name="cvc"
-                        value={cardData.cvc}
-                        onChange={handleCardChange}
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="123"
-                        autoComplete="cc-csc"
-                      />
-                    </label>
-                  </div>
-                )}
-                <div className="receipt">
-                  <span>Plan</span>
-                  <strong>{selectedPlan}</strong>
-                  <span>Status</span>
-                  <strong>Ready</strong>
-                </div>
-                <p className={`flow-status${status ? ' is-visible' : ''}`} aria-live="polite">
-                  {status}
-                </p>
-                <div className="flow-actions">
-                  <button
-                    className="hot-button"
-                    type="button"
-                    onClick={() => void completePayment()}
-                    disabled={submitting}
-                  >
-                    {submitting ? 'Processing…' : 'Pay & Enter'}
-                  </button>
-                  <button
-                    className="ghost-button"
-                    type="button"
-                    onClick={() => {
-                      setStatus('');
-                      setScreen('plans');
-                    }}
-                  >
-                    Change Plan
-                  </button>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>

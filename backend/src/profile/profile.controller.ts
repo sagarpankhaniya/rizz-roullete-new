@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Patch,
   UseGuards,
 } from '@nestjs/common';
@@ -45,21 +44,6 @@ export class ProfileController {
     const currentUser = await this.usersService.findById(user.userId);
     if (!currentUser) {
       throw new BadRequestException('User not found');
-    }
-
-    const currentPref = normalizeInterestedIn(currentUser.interestedIn);
-    const narrowingToSpecificGender =
-      interestedIn !== 'everyone' && interestedIn !== 'couple' && interestedIn !== 'other';
-    if (
-      currentPref &&
-      currentPref !== interestedIn &&
-      narrowingToSpecificGender &&
-      !currentUser.isSubscribed
-    ) {
-      throw new ForbiddenException({
-        error: 'Subscription required to change match preference.',
-        code: 'SUBSCRIPTION_REQUIRED',
-      });
     }
 
     if (!currentUser.gender) {
