@@ -6,8 +6,10 @@ import {
   CreatorInvite,
   CreatorInviteDocument,
 } from '../invites/schemas/creator-invite.schema';
+import { VisitsService } from '../visits/visits.service';
 
 type DayCount = { label: string; count: number };
+type DayVisitorCount = { label: string; visitors: number };
 type NamedCount = { label: string; count: number };
 
 @Injectable()
@@ -16,6 +18,7 @@ export class AdminAnalyticsService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(CreatorInvite.name)
     private readonly inviteModel: Model<CreatorInviteDocument>,
+    private readonly visitsService: VisitsService,
   ) {}
 
   private startOfDay(date: Date) {
@@ -43,6 +46,53 @@ export class AdminAnalyticsService {
     }
 
     return series;
+  }
+
+  private buildVisitorDaySeries(
+    days: number,
+    visitors: Map<string, number>,
+  ): DayVisitorCount[] {
+    const series: DayVisitorCount[] = [];
+    const today = this.startOfDay(new Date());
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const day = new Date(today);
+      day.setDate(today.getDate() - i);
+      const label = this.formatDay(day);
+      series.push({
+        label,
+        visitors: visitors.get(label) ?? 0,
+      });
+    }
+
+    return series;
+  }
+
+  private buildVisitorRangeSeries(
+    from: Date,
+    to: Date,
+    visitors: Map<string, number>,
+  ): DayVisitorCount[] {
+    const series: DayVisitorCount[] = [];
+    const end = this.startOfDay(to);
+    const cursor = this.startOfDay(from);
+
+    while (cursor <= end) {
+      const label = this.formatDay(cursor);
+      series.push({
+        label,
+        visitors: visitors.get(label) ?? 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return series;
+  }
+
+  private endOfDay(date: Date) {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
   }
 
   private async aggregateDailyCounts(
@@ -77,6 +127,7 @@ export class AdminAnalyticsService {
     monthAgo.setDate(now.getDate() - 30);
     const fourteenDaysAgo = this.startOfDay(new Date(now));
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
+    const todayStart = this.startOfDay(now);
 
     const normalUserFilter = { role: { $ne: 'admin' }, isVip: { $ne: true } };
     const creatorUserFilter = { role: { $ne: 'admin' }, isVip: true };
@@ -96,6 +147,9 @@ export class AdminAnalyticsService {
       femaleUsers,
       userSignupMap,
       creatorInviteMap,
+      visitorsToday,
+      visitorsThisWeek,
+      dailyVisitorsMap,
     ] = await Promise.all([
       this.userModel.countDocuments(normalUserFilter).exec(),
       this.userModel
@@ -147,6 +201,9 @@ export class AdminAnalyticsService {
         'createdAt',
         fourteenDaysAgo,
       ),
+      this.visitsService.countUniqueVisitorsSince(todayStart),
+      this.visitsService.countUniqueVisitorsSince(weekAgo),
+      this.visitsService.aggregateDailyUniqueVisitors(fourteenDaysAgo),
     ]);
 
     const unknownGender = Math.max(
@@ -166,6 +223,8 @@ export class AdminAnalyticsService {
         invitedCreators,
         acceptedCreators,
         bannedCreators,
+        visitorsToday,
+        visitorsThisWeek,
       },
       charts: {
         userSignups: this.buildDaySeries(14, userSignupMap),
@@ -183,7 +242,36 @@ export class AdminAnalyticsService {
           { label: 'invited', count: invitedCreators },
           { label: 'accepted', count: acceptedCreators },
         ] satisfies NamedCount[],
+        dailyVisitors: this.buildVisitorDaySeries(14, dailyVisitorsMap),
       },
+    };
+  }
+
+  async getVisitorAnalytics(input: { from?: Date; to?: Date } = {}) {
+    const toDay = input.to ? this.startOfDay(input.to) : this.startOfDay(new Date());
+    const fromDay = input.from
+      ? this.startOfDay(input.from)
+      : (() => {
+          const d = new Date(toDay);
+          d.setDate(d.getDate() - 29);
+          return d;
+        })();
+
+    const maxFrom = new Date(toDay);
+    maxFrom.setDate(maxFrom.getDate() - 89);
+    const safeFrom = fromDay < maxFrom ? maxFrom : fromDay;
+    const until = this.endOfDay(toDay);
+
+    const [dailyVisitorsMap, totalUniqueVisitors] = await Promise.all([
+      this.visitsService.aggregateDailyUniqueVisitors(safeFrom, until),
+      this.visitsService.countUniqueVisitorsSince(safeFrom, until),
+    ]);
+
+    return {
+      from: this.formatDay(safeFrom),
+      to: this.formatDay(toDay),
+      totalUniqueVisitors,
+      series: this.buildVisitorRangeSeries(safeFrom, toDay, dailyVisitorsMap),
     };
   }
 }

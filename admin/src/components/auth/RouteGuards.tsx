@@ -32,7 +32,7 @@ export function GuestRoute() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/admiin/" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Outlet />;

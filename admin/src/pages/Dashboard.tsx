@@ -9,6 +9,8 @@ import {
   Cell,
   Pie,
   PieChart,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -96,7 +98,7 @@ export default function Dashboard() {
           Dashboard
         </h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Overview of users, creators, and recent activity
+          Overview of users, creators, visitors, and recent activity
         </p>
       </div>
 
@@ -116,6 +118,14 @@ export default function Dashboard() {
         <div className="space-y-6 pb-2">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
+              title="Visitors today"
+              value={summary.visitorsToday}
+            />
+            <StatCard
+              title="Visitors (7d)"
+              value={summary.visitorsThisWeek}
+            />
+            <StatCard
               title="Total users"
               value={summary.totalUsers}
               hint={`${summary.activeUsers} active · ${summary.bannedUsers} banned`}
@@ -125,6 +135,9 @@ export default function Dashboard() {
               value={summary.subscribedUsers}
               hint={`${summary.newUsersThisWeek} new this week`}
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard
               title="Creators"
               value={summary.totalCreators}
@@ -138,6 +151,38 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <ChartCard
+              title="Daily visitors"
+              description="Unique visitors — last 14 days"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts.dailyVisitors}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="label"
+                    tickFormatter={formatShortDate}
+                    tick={{ fontSize: 12, fill: "#98a2b3" }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 12, fill: "#98a2b3" }}
+                  />
+                  <Tooltip
+                    labelFormatter={(value) => String(value)}
+                    formatter={(value) => [Number(value ?? 0), "Visitors"]}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="visitors"
+                    name="Unique visitors"
+                    stroke="#465fff"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
             <ChartCard
               title="User signups"
               description="Last 14 days"

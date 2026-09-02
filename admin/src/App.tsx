@@ -11,6 +11,7 @@ import CreatorView from "./pages/CreatorView";
 import Reports from "./pages/Reports";
 import CoinTransactions from "./pages/CoinTransactions";
 import ChatLogs from "./pages/ChatLogs";
+import Visitors from "./pages/Visitors";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import { GuestRoute, ProtectedRoute } from "./components/auth/RouteGuards";
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/coins" element={<CoinTransactions />} />
             <Route path="/chat" element={<ChatLogs />} />
+            <Route path="/visitors" element={<Visitors />} />
           </Route>
         </Route>
 

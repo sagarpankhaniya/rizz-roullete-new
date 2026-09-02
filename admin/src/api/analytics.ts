@@ -11,11 +11,18 @@ export type DashboardSummary = {
   invitedCreators: number;
   acceptedCreators: number;
   bannedCreators: number;
+  visitorsToday: number;
+  visitorsThisWeek: number;
 };
 
 export type ChartPoint = {
   label: string;
   count: number;
+};
+
+export type VisitorDayPoint = {
+  label: string;
+  visitors: number;
 };
 
 export type DashboardAnalytics = {
@@ -27,12 +34,32 @@ export type DashboardAnalytics = {
     usersByGender: ChartPoint[];
     usersByStatus: ChartPoint[];
     creatorsByStatus: ChartPoint[];
+    dailyVisitors: VisitorDayPoint[];
   };
+};
+
+export type VisitorAnalytics = {
+  success: boolean;
+  from: string;
+  to: string;
+  totalUniqueVisitors: number;
+  series: VisitorDayPoint[];
 };
 
 export async function getDashboardAnalytics() {
   const { data } = await api.get<DashboardAnalytics>(
     "/admin/analytics/dashboard",
+  );
+  return data;
+}
+
+export async function getVisitorAnalytics(params: {
+  from: string;
+  to: string;
+}) {
+  const { data } = await api.get<VisitorAnalytics>(
+    "/admin/analytics/visitors",
+    { params },
   );
   return data;
 }

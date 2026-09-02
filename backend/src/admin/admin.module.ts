@@ -10,6 +10,7 @@ import { InvitesModule } from '../invites/invites.module';
 import { ReportsModule } from '../reports/reports.module';
 import { CoinsModule } from '../coins/coins.module';
 import { ChatModule } from '../chat/chat.module';
+import { VisitsModule } from '../visits/visits.module';
 import { AdminAuthController } from './admin-auth.controller';
 import { AdminUsersController } from './admin-users.controller';
 import { AdminCreatorsController } from './admin-creators.controller';
@@ -36,6 +37,7 @@ import { AdminAuthGuard } from './guards/admin-auth.guard';
     ReportsModule,
     CoinsModule,
     ChatModule,
+    VisitsModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
