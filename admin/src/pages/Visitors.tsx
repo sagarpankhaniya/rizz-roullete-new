@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "react-toastify";
 import PageMeta from "../components/common/PageMeta";
-import Input from "../components/form/input/InputField";
-import Label from "../components/form/Label";
+import DatePicker from "../components/form/date-picker";
+import Button from "../components/ui/button/Button";
 import {
   Table,
   TableBody,
@@ -30,17 +31,43 @@ function defaultFromDate() {
   return toInputDate(date);
 }
 
+function defaultToDate() {
+  return toInputDate(new Date());
+}
+
 export default function Visitors() {
   const [from, setFrom] = useState(defaultFromDate);
-  const [to, setTo] = useState(() => toInputDate(new Date()));
+  const [to, setTo] = useState(defaultToDate);
+  const [searchRange, setSearchRange] = useState(() => ({
+    from: defaultFromDate(),
+    to: defaultToDate(),
+  }));
 
   const query = useQuery({
-    queryKey: ["admin", "analytics", "visitors", from, to],
-    queryFn: () => getVisitorAnalytics({ from, to }),
-    enabled: Boolean(from && to),
+    queryKey: [
+      "admin",
+      "analytics",
+      "visitors",
+      searchRange.from,
+      searchRange.to,
+    ],
+    queryFn: () => getVisitorAnalytics(searchRange),
+    enabled: Boolean(searchRange.from && searchRange.to),
   });
 
   const series = query.data?.series ?? [];
+
+  const handleSearch = () => {
+    if (!from || !to) {
+      toast.error("Please select both dates");
+      return;
+    }
+    if (from > to) {
+      toast.error("From date must be on or before To date");
+      return;
+    }
+    setSearchRange({ from, to });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
@@ -58,23 +85,29 @@ export default function Visitors() {
         </p>
       </div>
 
-      <div className="mb-5 grid shrink-0 gap-4 sm:grid-cols-2 lg:max-w-xl">
-        <div>
-          <Label>From date</Label>
-          <Input
-            type="date"
+      <div className="mb-5 flex shrink-0 flex-col gap-4 lg:flex-row lg:items-end">
+        <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:max-w-2xl">
+          <DatePicker
+            id="visitors-from-date"
+            label="From date"
+            placeholder="Select start date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            maxDate={to || defaultToDate()}
+            onChange={(_dates, dateStr) => setFrom(dateStr)}
           />
-        </div>
-        <div>
-          <Label>To date</Label>
-          <Input
-            type="date"
+          <DatePicker
+            id="visitors-to-date"
+            label="To date"
+            placeholder="Select end date"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            minDate={from}
+            maxDate={defaultToDate()}
+            onChange={(_dates, dateStr) => setTo(dateStr)}
           />
         </div>
+        <Button onClick={handleSearch} disabled={query.isFetching}>
+          {query.isFetching ? "Searching..." : "Search"}
+        </Button>
       </div>
 
       {query.data && (
