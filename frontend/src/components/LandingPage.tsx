@@ -260,6 +260,7 @@ function SignupPanel({
           onBanned?.(googleProfile?.email ?? form.email.trim().toLowerCase());
           return;
         }
+        console.error('[Google Auth] sign-in failed — error:', ('error' in result && result.error) || '', '| code:', ('code' in result && result.code) || 'none');
         setStatus(
           ('error' in result && result.error) || 'Google sign-in failed',
         );
@@ -271,7 +272,9 @@ function SignupPanel({
       setGoogleProfile(null);
 
       onRegister?.(result.user, result.token);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`[Google Auth] Unexpected exception:\n${msg}`);
       setStatus('Server error');
     } finally {
       setSubmitting(false);

@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Post,
   Req,
   UseGuards,
@@ -31,6 +32,8 @@ import {
 
 @Controller('api')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
@@ -97,21 +100,29 @@ export class AuthController {
    */
   @Post('auth/google/code')
   async googleAuthCode(@Body() body: GoogleAuthCodeDto, @Req() req: Request) {
-    const result = await this.authService.loginWithGoogleCode({
-      code: body.code,
-      redirectUri: body.redirectUri,
-      gender: body.gender,
-      interestedIn: body.interestedIn,
-      inviteId: body.inviteId,
-      registrationIp: getClientIp(req),
-      userAgent: getUserAgent(req),
-    });
+    const ip = getClientIp(req);
+    this.logger.log(`[Google Auth] /auth/google/code called — ip=${ip} redirectUri=${body.redirectUri}`);
+    try {
+      const result = await this.authService.loginWithGoogleCode({
+        code: body.code,
+        redirectUri: body.redirectUri,
+        gender: body.gender,
+        interestedIn: body.interestedIn,
+        inviteId: body.inviteId,
+        registrationIp: ip,
+        userAgent: getUserAgent(req),
+      });
 
-    if ('needsGender' in result) {
-      return { success: false, ...result };
+      if ('needsGender' in result) {
+        return { success: false, ...result };
+      }
+
+      return { success: true, ...result };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[Google Auth] /auth/google/code failed — ip=${ip} redirectUri=${body.redirectUri} error=${msg}`);
+      throw err;
     }
-
-    return { success: true, ...result };
   }
 
   @Post('unban-request')

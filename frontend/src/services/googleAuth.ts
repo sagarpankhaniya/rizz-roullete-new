@@ -25,11 +25,7 @@ export async function authenticateWithGoogle(body: {
   interestedIn?: string;
   inviteId?: string;
 }): Promise<GoogleAuthResult> {
-  console.log('[Google Auth] Sending auth code to backend', {
-    redirectUri: body.redirectUri,
-    hasGender: Boolean(body.gender),
-    hasInviteId: Boolean(body.inviteId),
-  });
+  alert(`[Google Auth] Sending code to backend\nredirectUri: ${body.redirectUri}\nhasGender: ${Boolean(body.gender)}`);
 
   let res: Response;
   try {
@@ -39,32 +35,44 @@ export async function authenticateWithGoogle(body: {
       body: JSON.stringify(body),
     });
   } catch (networkErr) {
-    console.error('[Google Auth] Network error — could not reach backend:', networkErr);
+    const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
+    alert(`[Google Auth] Network error — could not reach backend:\n${msg}`);
     return { success: false, error: 'Network error. Please try again.' };
   }
 
-  console.log('[Google Auth] Backend response status:', res.status);
+  alert(`[Google Auth] Backend response status: ${res.status}`);
 
-  if (res.status === 401 || res.status === 403) {
+  // Read raw body first so we can log it on any error
+  let rawText = '';
+  try {
+    rawText = await res.text();
+  } catch (readErr) {
+    const msg = readErr instanceof Error ? readErr.message : String(readErr);
+    alert(`[Google Auth] Failed to read response body:\n${msg}`);
+    return { success: false, error: 'Unexpected server response' };
+  }
+
+  if (!res.ok) {
+    alert(`[Google Auth] Backend error ${res.status}:\n${rawText.slice(0, 400)}`);
     let detail = '';
     try {
-      const json = await res.json();
+      const json = JSON.parse(rawText);
       detail = json?.message || json?.error || '';
-    } catch { /* ignore */ }
-    console.error(`[Google Auth] Backend rejected with ${res.status}:`, detail);
-    return { success: false, error: 'Google sign-in failed' };
+    } catch { /* not JSON */ }
+    return { success: false, error: detail || `Server error (${res.status})` };
   }
 
   let result: Record<string, unknown>;
   try {
-    result = await res.json();
+    result = JSON.parse(rawText);
   } catch (parseErr) {
-    console.error('[Google Auth] Failed to parse backend response:', parseErr);
+    const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    alert(`[Google Auth] Failed to parse backend JSON:\n${msg}\nraw: ${rawText.slice(0, 200)}`);
     return { success: false, error: 'Unexpected server response' };
   }
 
   if (result.needsGender) {
-    console.log('[Google Auth] Backend needs gender for new user');
+    alert('[Google Auth] Backend needs gender for new user');
     return {
       success: false,
       needsGender: true,
@@ -73,10 +81,7 @@ export async function authenticateWithGoogle(body: {
   }
 
   if (!result.success) {
-    console.error('[Google Auth] Backend returned failure:', {
-      error: result.error,
-      code: result.code,
-    });
+    alert(`[Google Auth] Backend returned failure:\nerror: ${result.error ?? 'none'}\ncode: ${result.code ?? 'none'}`);
     return {
       success: false,
       error: (result.error as string) ?? 'Google sign-in failed',
@@ -85,7 +90,7 @@ export async function authenticateWithGoogle(body: {
   }
 
   const user = result.user as Record<string, unknown> | undefined;
-  console.log('[Google Auth] Success — email:', user?.email ?? 'unknown', '| isNewUser:', Boolean(result.isNewUser));
+  alert(`[Google Auth] Success!\nemail: ${user?.email ?? 'unknown'}\nisNewUser: ${Boolean(result.isNewUser)}`);
 
   return {
     success: true,

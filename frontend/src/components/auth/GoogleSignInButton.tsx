@@ -36,23 +36,17 @@ export function GoogleSignInButton({
     scope: 'openid email profile',
     redirect_uri: redirectUri,
     onSuccess: (response) => {
-      console.log('[Google Auth] OAuth code received, forwarding to backend');
+      alert('[Google Auth] OAuth code received, forwarding to backend');
       onAuthCode(response.code, redirectUri);
     },
     onError: (error) => {
-      // error contains error, error_description, error_uri from Google
-      console.error('[Google Auth] OAuth error from Google:', {
-        error: error.error,
-        description: error.error_description,
-        uri: error.error_uri,
-      });
+      alert(
+        `[Google Auth] OAuth error from Google:\nerror: ${error.error ?? 'none'}\ndescription: ${error.error_description ?? 'none'}`,
+      );
       onError?.();
     },
     onNonOAuthError: (error: NonOAuthError) => {
-      // popup_closed, popup_failed_to_open, unknown
-      console.error('[Google Auth] Non-OAuth error (popup/network):', {
-        type: error.type,
-      });
+      alert(`[Google Auth] Popup/network error:\ntype: ${error.type}`);
       onError?.();
     },
   });
