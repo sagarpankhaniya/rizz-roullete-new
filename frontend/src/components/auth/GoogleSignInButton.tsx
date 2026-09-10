@@ -29,24 +29,23 @@ export function GoogleSignInButton({
     return () => observer.disconnect();
   }, []);
 
-  const redirectUri = window.location.origin;
+  // Strip www. so the redirectUri always matches the canonical domain
+  // registered in Google Cloud Console (https://rizzroulette.chat, not www.)
+  const redirectUri = window.location.origin.replace(/^(https?:\/\/)www\./, '$1');
 
   const login = useGoogleLogin({
     flow: 'auth-code',
     scope: 'openid email profile',
     redirect_uri: redirectUri,
     onSuccess: (response) => {
-      alert('[Google Auth] OAuth code received, forwarding to backend');
       onAuthCode(response.code, redirectUri);
     },
     onError: (error) => {
-      alert(
-        `[Google Auth] OAuth error from Google:\nerror: ${error.error ?? 'none'}\ndescription: ${error.error_description ?? 'none'}`,
-      );
+      console.error('[Google Auth] OAuth error:', error.error, error.error_description);
       onError?.();
     },
     onNonOAuthError: (error: NonOAuthError) => {
-      alert(`[Google Auth] Popup/network error:\ntype: ${error.type}`);
+      console.error('[Google Auth] Popup/network error:', error.type);
       onError?.();
     },
   });

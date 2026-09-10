@@ -274,7 +274,7 @@ function SignupPanel({
       onRegister?.(result.user, result.token);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`[Google Auth] Unexpected exception:\n${msg}`);
+      console.error('[Google Auth] Unexpected exception:', msg);
       setStatus('Server error');
     } finally {
       setSubmitting(false);
