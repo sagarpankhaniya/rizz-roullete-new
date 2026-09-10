@@ -219,8 +219,12 @@ export class AuthService {
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`[Google Auth] Code exchange failed: ${msg}`);
-      throw new UnauthorizedException('Failed to exchange Google auth code');
+      // Log the full error including any response body from Google
+      const detail = (error as Record<string, unknown>)?.response
+        ? JSON.stringify((error as Record<string, unknown>).response)
+        : msg;
+      this.logger.error(`[Google Auth] Code exchange failed — redirectUri=${data.redirectUri} error=${detail}`);
+      throw new UnauthorizedException(`Failed to exchange Google auth code: ${msg}`);
     }
 
     return this.loginWithGoogle({

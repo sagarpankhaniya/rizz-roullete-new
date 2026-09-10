@@ -213,7 +213,7 @@ function SignupPanel({
 }: SignupPanelProps) {
   const [isLogin, setIsLogin] = useState(false);
   const [screen, setScreen] = useState<'signup' | 'google-gender'>('signup');
-  const [googleAuthCode, setGoogleAuthCode] = useState<{ code: string; redirectUri: string } | null>(null);
+  const [googleIdToken, setGoogleIdToken] = useState<string | null>(null);
   const [googleProfile, setGoogleProfile] = useState<{
     firstName: string;
     email: string;
@@ -236,13 +236,12 @@ function SignupPanel({
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  async function handleGoogleAuthCode(code: string, redirectUri: string, gender?: string) {
+  async function handleGoogleIdToken(idToken: string, gender?: string) {
     setStatus('');
     setSubmitting(true);
     try {
       const result = await authenticateWithGoogle({
-        code,
-        redirectUri,
+        idToken,
         gender,
         interestedIn: form.interestedIn,
         ...(inviteId ? { inviteId } : {}),
@@ -250,7 +249,7 @@ function SignupPanel({
 
       if (!result.success) {
         if ('needsGender' in result && result.needsGender) {
-          setGoogleAuthCode({ code, redirectUri });
+          setGoogleIdToken(idToken);
           setGoogleProfile(result.profile);
           setGoogleGender('female');
           setScreen('google-gender');
@@ -260,21 +259,16 @@ function SignupPanel({
           onBanned?.(googleProfile?.email ?? form.email.trim().toLowerCase());
           return;
         }
-        console.error('[Google Auth] sign-in failed — error:', ('error' in result && result.error) || '', '| code:', ('code' in result && result.code) || 'none');
-        setStatus(
-          ('error' in result && result.error) || 'Google sign-in failed',
-        );
+        setStatus(('error' in result && result.error) || 'Google sign-in failed');
         return;
       }
 
       setToken(result.token);
-      setGoogleAuthCode(null);
+      setGoogleIdToken(null);
       setGoogleProfile(null);
-
       onRegister?.(result.user, result.token);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[Google Auth] Unexpected exception:', msg);
+      console.error('[Google Auth] Unexpected exception:', err);
       setStatus('Server error');
     } finally {
       setSubmitting(false);
@@ -282,9 +276,9 @@ function SignupPanel({
   }
 
   async function completeGoogleGenderSignup() {
-    if (!googleAuthCode) return;
+    if (!googleIdToken) return;
     const gender = googleGender === 'other' ? 'male' : googleGender;
-    await handleGoogleAuthCode(googleAuthCode.code, googleAuthCode.redirectUri, gender);
+    await handleGoogleIdToken(googleIdToken, gender);
   }
 
   async function registerAccount() {
@@ -422,7 +416,7 @@ function SignupPanel({
               </button>
               <GoogleSignInButton
                 disabled={submitting}
-                onAuthCode={(code, redirectUri) => void handleGoogleAuthCode(code, redirectUri)}
+                onIdToken={(token) => void handleGoogleIdToken(token)}
                 onError={() => setStatus('Google sign-in was cancelled or failed.')}
               />
               <button
@@ -506,7 +500,7 @@ function SignupPanel({
                   </button>
                   <GoogleSignInButton
                     disabled={submitting}
-                    onAuthCode={(code, redirectUri) => void handleGoogleAuthCode(code, redirectUri)}
+                    onIdToken={(token) => void handleGoogleIdToken(token)}
                     onError={() => setStatus('Google sign-in was cancelled or failed.')}
                   />
                   <button className="ghost-button" type="button" onClick={onClose}>
@@ -564,7 +558,7 @@ function SignupPanel({
                     className="ghost-button"
                     type="button"
                     onClick={() => {
-                      setGoogleAuthCode(null);
+                      setGoogleIdToken(null);
                       setGoogleProfile(null);
                       setScreen('signup');
                       setStatus('');
