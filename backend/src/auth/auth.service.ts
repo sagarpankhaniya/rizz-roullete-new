@@ -182,6 +182,48 @@ export class AuthService {
     };
   }
 
+  /**
+   * Exchange an OAuth2 authorization code (from the auth-code flow) for an
+   * ID token, then delegate to loginWithGoogle for the rest of the logic.
+   * This flow supports passkeys, hardware keys, and all Google auth methods
+   * because the browser navigates to accounts.google.com directly.
+   */
+  async loginWithGoogleCode(data: {
+    code: string;
+    redirectUri: string;
+    gender?: string;
+    interestedIn?: string;
+    inviteId?: string;
+    registrationIp?: string | null;
+    userAgent?: string | null;
+  }) {
+    const clientId = this.config.getOrThrow<string>('google.clientId');
+    const clientSecret = this.config.getOrThrow<string>('google.clientSecret');
+
+    const client = new OAuth2Client(clientId, clientSecret, data.redirectUri);
+
+    let idToken: string;
+    try {
+      const { tokens } = await client.getToken(data.code);
+      if (!tokens.id_token) {
+        throw new UnauthorizedException('Google did not return an ID token');
+      }
+      idToken = tokens.id_token;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException('Failed to exchange Google auth code');
+    }
+
+    return this.loginWithGoogle({
+      idToken,
+      gender: data.gender,
+      interestedIn: data.interestedIn,
+      inviteId: data.inviteId,
+      registrationIp: data.registrationIp,
+      userAgent: data.userAgent,
+    });
+  }
+
   private verifyGoogleIdToken(idToken: string): Promise<{
     googleId: string;
     email: string;

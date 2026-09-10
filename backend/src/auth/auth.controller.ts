@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
+import { GoogleAuthCodeDto } from './dto/google-auth-code.dto';
 import { UnbanRequestDto } from './dto/unban-request.dto';
 import { UsersService } from '../users/users.service';
 import {
@@ -74,6 +75,31 @@ export class AuthController {
   async googleAuth(@Body() body: GoogleAuthDto, @Req() req: Request) {
     const result = await this.authService.loginWithGoogle({
       idToken: body.idToken,
+      gender: body.gender,
+      interestedIn: body.interestedIn,
+      inviteId: body.inviteId,
+      registrationIp: getClientIp(req),
+      userAgent: getUserAgent(req),
+    });
+
+    if ('needsGender' in result) {
+      return { success: false, ...result };
+    }
+
+    return { success: true, ...result };
+  }
+
+  /**
+   * Auth-code flow endpoint — receives the OAuth2 authorization code from the
+   * frontend (useGoogleLogin with flow='auth-code'), exchanges it for an ID
+   * token server-side, then continues with the same loginWithGoogle logic.
+   * This supports passkeys and all Google authentication methods.
+   */
+  @Post('auth/google/code')
+  async googleAuthCode(@Body() body: GoogleAuthCodeDto, @Req() req: Request) {
+    const result = await this.authService.loginWithGoogleCode({
+      code: body.code,
+      redirectUri: body.redirectUri,
       gender: body.gender,
       interestedIn: body.interestedIn,
       inviteId: body.inviteId,

@@ -8,6 +8,11 @@ export default () => {
     throw new Error('GOOGLE_CLIENT_ID is required in backend/.env');
   }
 
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  if (!googleClientSecret) {
+    throw new Error('GOOGLE_CLIENT_SECRET is required in backend/.env');
+  }
+
   return {
   port: parseInt(process.env.PORT ?? '3001', 10),
   /** development | production | test — age verification is skipped outside production */
@@ -25,6 +30,7 @@ export default () => {
 
   google: {
     clientId: googleClientId,
+    clientSecret: googleClientSecret,
   },
 
   mongodb: {

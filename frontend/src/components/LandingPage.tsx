@@ -213,7 +213,7 @@ function SignupPanel({
 }: SignupPanelProps) {
   const [isLogin, setIsLogin] = useState(false);
   const [screen, setScreen] = useState<'signup' | 'google-gender'>('signup');
-  const [googleIdToken, setGoogleIdToken] = useState<string | null>(null);
+  const [googleAuthCode, setGoogleAuthCode] = useState<{ code: string; redirectUri: string } | null>(null);
   const [googleProfile, setGoogleProfile] = useState<{
     firstName: string;
     email: string;
@@ -236,12 +236,13 @@ function SignupPanel({
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  async function handleGoogleIdToken(idToken: string, gender?: string) {
+  async function handleGoogleAuthCode(code: string, redirectUri: string, gender?: string) {
     setStatus('');
     setSubmitting(true);
     try {
       const result = await authenticateWithGoogle({
-        idToken,
+        code,
+        redirectUri,
         gender,
         interestedIn: form.interestedIn,
         ...(inviteId ? { inviteId } : {}),
@@ -249,7 +250,7 @@ function SignupPanel({
 
       if (!result.success) {
         if ('needsGender' in result && result.needsGender) {
-          setGoogleIdToken(idToken);
+          setGoogleAuthCode({ code, redirectUri });
           setGoogleProfile(result.profile);
           setGoogleGender('female');
           setScreen('google-gender');
@@ -266,7 +267,7 @@ function SignupPanel({
       }
 
       setToken(result.token);
-      setGoogleIdToken(null);
+      setGoogleAuthCode(null);
       setGoogleProfile(null);
 
       onRegister?.(result.user, result.token);
@@ -278,9 +279,9 @@ function SignupPanel({
   }
 
   async function completeGoogleGenderSignup() {
-    if (!googleIdToken) return;
+    if (!googleAuthCode) return;
     const gender = googleGender === 'other' ? 'male' : googleGender;
-    await handleGoogleIdToken(googleIdToken, gender);
+    await handleGoogleAuthCode(googleAuthCode.code, googleAuthCode.redirectUri, gender);
   }
 
   async function registerAccount() {
@@ -418,7 +419,7 @@ function SignupPanel({
               </button>
               <GoogleSignInButton
                 disabled={submitting}
-                onIdToken={(token) => void handleGoogleIdToken(token)}
+                onAuthCode={(code, redirectUri) => void handleGoogleAuthCode(code, redirectUri)}
                 onError={() => setStatus('Google sign-in was cancelled or failed.')}
               />
               <button
@@ -502,7 +503,7 @@ function SignupPanel({
                   </button>
                   <GoogleSignInButton
                     disabled={submitting}
-                    onIdToken={(token) => void handleGoogleIdToken(token)}
+                    onAuthCode={(code, redirectUri) => void handleGoogleAuthCode(code, redirectUri)}
                     onError={() => setStatus('Google sign-in was cancelled or failed.')}
                   />
                   <button className="ghost-button" type="button" onClick={onClose}>
@@ -560,7 +561,7 @@ function SignupPanel({
                     className="ghost-button"
                     type="button"
                     onClick={() => {
-                      setGoogleIdToken(null);
+                      setGoogleAuthCode(null);
                       setGoogleProfile(null);
                       setScreen('signup');
                       setStatus('');

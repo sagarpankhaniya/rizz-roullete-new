@@ -18,13 +18,20 @@ export type GoogleAuthResult =
       code?: string;
     };
 
+/**
+ * Auth-code flow — send the OAuth2 authorization code to the backend.
+ * The backend exchanges it for an ID token using the client secret,
+ * then creates/signs in the user. Supports passkeys and all Google
+ * authentication methods.
+ */
 export async function authenticateWithGoogle(body: {
-  idToken: string;
+  code: string;
+  redirectUri: string;
   gender?: string;
   interestedIn?: string;
   inviteId?: string;
 }): Promise<GoogleAuthResult> {
-  const res = await fetch(apiUrl('/api/auth/google'), {
+  const res = await fetch(apiUrl('/api/auth/google/code'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
