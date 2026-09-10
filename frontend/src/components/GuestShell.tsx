@@ -54,13 +54,18 @@ export function GuestShell() {
       clearPendingCreator();
     }
 
-    void bootstrapCameraFromUserGesture().finally(() => {
-      if (destination === 'deck') {
-        navigate('/deck', { replace: true });
-        return;
-      }
+    // Navigate immediately — don't block on camera bootstrap.
+    // On mobile (especially after a Google OAuth popup) getUserMedia is no
+    // longer inside a user-gesture stack and can hang indefinitely.
+    // The match page requests the camera again with its own gesture gate.
+    if (destination === 'deck') {
+      navigate('/deck', { replace: true });
+    } else {
       navigate('/match', { replace: true });
-    });
+    }
+
+    // Fire-and-forget: pre-warm camera in background where possible
+    void bootstrapCameraFromUserGesture();
   };
 
   return (
