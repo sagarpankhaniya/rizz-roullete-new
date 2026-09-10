@@ -1,23 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGoogleLogin } from '@react-oauth/google';
+import { useGoogleLogin, type NonOAuthError } from '@react-oauth/google';
 
 type GoogleSignInButtonProps = {
   disabled?: boolean;
-  /**
-   * Called with the OAuth2 authorization code (auth-code flow).
-   * The backend exchanges this code for an ID token server-side,
-   * which supports passkeys and all Google authentication methods.
-   */
   onAuthCode: (code: string, redirectUri: string) => void;
   onError?: () => void;
 };
 
-/**
- * Uses the OAuth2 authorization code flow (flow='auth-code').
- * This opens accounts.google.com in a popup — a full browser context that
- * supports passkeys, hardware security keys, and every Google auth method.
- * The backend exchanges the code for tokens via GOOGLE_CLIENT_SECRET.
- */
 export function GoogleSignInButton({
   disabled = false,
   onAuthCode,
@@ -40,8 +29,6 @@ export function GoogleSignInButton({
     return () => observer.disconnect();
   }, []);
 
-  // The redirect_uri for auth-code flow must be registered in Google Cloud Console.
-  // For the popup flow, Google accepts the current origin as the redirect URI.
   const redirectUri = window.location.origin;
 
   const login = useGoogleLogin({
@@ -49,10 +36,25 @@ export function GoogleSignInButton({
     scope: 'openid email profile',
     redirect_uri: redirectUri,
     onSuccess: (response) => {
+      console.log('[Google Auth] OAuth code received, forwarding to backend');
       onAuthCode(response.code, redirectUri);
     },
-    onError: () => onError?.(),
-    onNonOAuthError: () => onError?.(),
+    onError: (error) => {
+      // error contains error, error_description, error_uri from Google
+      console.error('[Google Auth] OAuth error from Google:', {
+        error: error.error,
+        description: error.error_description,
+        uri: error.error_uri,
+      });
+      onError?.();
+    },
+    onNonOAuthError: (error: NonOAuthError) => {
+      // popup_closed, popup_failed_to_open, unknown
+      console.error('[Google Auth] Non-OAuth error (popup/network):', {
+        type: error.type,
+      });
+      onError?.();
+    },
   });
 
   if (disabled) {

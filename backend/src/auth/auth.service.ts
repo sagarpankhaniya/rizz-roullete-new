@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -19,6 +20,8 @@ import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly userProfileService: UserProfileService,
@@ -202,15 +205,21 @@ export class AuthService {
 
     const client = new OAuth2Client(clientId, clientSecret, data.redirectUri);
 
+    this.logger.log(`[Google Auth] Exchanging auth code — redirectUri=${data.redirectUri} ip=${data.registrationIp ?? 'unknown'}`);
+
     let idToken: string;
     try {
       const { tokens } = await client.getToken(data.code);
       if (!tokens.id_token) {
+        this.logger.error('[Google Auth] Code exchange succeeded but Google returned no id_token');
         throw new UnauthorizedException('Google did not return an ID token');
       }
       idToken = tokens.id_token;
+      this.logger.log('[Google Auth] Code exchange successful, verifying ID token');
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[Google Auth] Code exchange failed: ${msg}`);
       throw new UnauthorizedException('Failed to exchange Google auth code');
     }
 
@@ -238,9 +247,11 @@ export class AuthService {
       .then((ticket) => {
         const payload = ticket.getPayload();
         if (!payload?.sub || !payload.email) {
+          this.logger.error('[Google Auth] ID token payload missing sub or email');
           throw new UnauthorizedException('Google profile missing required fields');
         }
         if (!payload.email_verified) {
+          this.logger.warn(`[Google Auth] Email not verified — email=${payload.email}`);
           throw new UnauthorizedException('Google email is not verified');
         }
 
@@ -248,6 +259,8 @@ export class AuthService {
           payload.given_name?.trim() ||
           payload.name?.trim().split(/\s+/)[0] ||
           'User';
+
+        this.logger.log(`[Google Auth] ID token verified — email=${payload.email} googleId=${payload.sub}`);
 
         return {
           googleId: payload.sub,
@@ -263,6 +276,8 @@ export class AuthService {
         ) {
           throw error;
         }
+        const msg = error instanceof Error ? error.message : String(error);
+        this.logger.error(`[Google Auth] ID token verification failed: ${msg}`);
         throw new UnauthorizedException('Invalid Google sign-in token');
       });
   }
@@ -295,6 +310,7 @@ export class AuthService {
     if (data.inviteId) {
       const invite = await this.invitesService.getPendingInvite(data.inviteId);
       if (invite.email !== googleProfile.email.toLowerCase().trim()) {
+        this.logger.warn(`[Google Auth] Invite email mismatch — expected=${invite.email} got=${googleProfile.email}`);
         throw new BadRequestException({
           error: 'Signup email must match the invite email',
         });
@@ -307,12 +323,14 @@ export class AuthService {
 
     if (user) {
       if (!user.googleId) {
+        this.logger.log(`[Google Auth] Linking Google account to existing email user — email=${googleProfile.email}`);
         user = await this.usersService.linkGoogleAccount(
           String(user._id),
           googleProfile.googleId,
         );
       }
       this.assertNotBanned(user);
+      this.logger.log(`[Google Auth] Existing user signed in — email=${googleProfile.email} userId=${String(user._id)}`);
       return {
         user: await this.userProfileService.toPublicUser(user),
         token: this.signToken(user),
@@ -322,6 +340,7 @@ export class AuthService {
 
     const gender = normalizeGender(data.gender);
     if (!gender) {
+      this.logger.log(`[Google Auth] New user needs gender selection — email=${googleProfile.email}`);
       return {
         needsGender: true,
         profile: {
@@ -333,6 +352,8 @@ export class AuthService {
 
     const interestedIn =
       normalizeInterestedIn(data.interestedIn) ?? 'everyone';
+
+    this.logger.log(`[Google Auth] Creating new Google user — email=${googleProfile.email} gender=${gender}`);
 
     user = await this.usersService.createGoogleUser({
       firstName: googleProfile.firstName,
@@ -359,6 +380,8 @@ export class AuthService {
         throw err;
       }
     }
+
+    this.logger.log(`[Google Auth] New user created — email=${googleProfile.email} userId=${String(user._id)}`);
 
     return {
       user: await this.userProfileService.toPublicUser(user),
