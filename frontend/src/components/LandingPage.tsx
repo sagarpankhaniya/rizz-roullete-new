@@ -21,14 +21,14 @@ type ModeConfig = {
   signupCopy: string;
 };
 
-const ALL_STATS = [
-  { value: '2,312', label: 'Online Now' },
-  { value: '1:3', label: 'Best Female Ratio' },
-  { value: '3s', label: 'Avg Match' },
-  { value: '2,847', label: 'Verified Online' },
-  { value: '$0', label: 'VIP For Women' },
-  { value: '3s', label: 'Avg Match' },
-];
+// const ALL_STATS = [
+//   { value: '2,312', label: 'Online Now' },
+//   { value: '1:3', label: 'Best Female Ratio' },
+//   { value: '3s', label: 'Avg Match' },
+//   { value: '2,847', label: 'Verified Online' },
+//   { value: '$0', label: 'VIP For Women' },
+//   { value: '3s', label: 'Avg Match' },
+// ];
 
 const modes: Record<RoomMode, ModeConfig> = {
   moderated: {
@@ -689,16 +689,16 @@ export default function LandingPage({ mode, onModeChange, onRegister, pendingCre
         </section>
 
         <footer className="bottom-bar anim-fade-up anim-delay-4">
-          <div className="stat-row">
+          {/* <div className="stat-row">
             {ALL_STATS.map((stat, index) => (
               <div key={`${stat.label}-${index}`}>
                 <strong>{stat.value}</strong>
                 <span>{stat.label}</span>
               </div>
             ))}
-          </div>
+          </div> */}
 
-          <div className="meta-row">
+          <div className="meta-row mt-146">
             <span className="vip-pill">♛ VIP free for women</span>
             <span className="safety-pill">🪪 Age verified</span>
             <span className="safety-pill">🔒 Never recorded</span>

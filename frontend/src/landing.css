@@ -731,6 +731,10 @@ h1 {
   width: 100%;
 }
 
+.mt-146 {
+  margin-top: 146px;
+}
+
 .meta-row span,
 .meta-row button {
   font-family: 'Poppins', sans-serif;
@@ -1570,6 +1574,9 @@ h1 {
     top: calc(46px + env(safe-area-inset-top, 0px));
     left: 12px;
     max-width: calc(100% - 24px - clamp(150px, 42vw, 190px));
+  }
+  .mt-146 {
+    margin-top: 0;
   }
 }
 
