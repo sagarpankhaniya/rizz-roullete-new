@@ -6,6 +6,7 @@ import { clearToken, getToken } from '../utils/auth';
 import { clearStoredUser, setStoredUser } from '../utils/user';
 import { disconnectSocket } from '../services/socket';
 import { fetchProfile } from '../services/profile';
+import { clearCreatorSession } from '../services/creators';
 import {
   bootstrapCameraFromUserGesture,
   deviceNeedsCameraGesture,
@@ -49,6 +50,8 @@ export function MatchShell() {
       navigate('/', { replace: true });
       return;
     }
+
+    clearCreatorSession();
 
     let cancelled = false;
 

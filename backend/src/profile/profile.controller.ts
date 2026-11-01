@@ -14,6 +14,7 @@ import { UsersService } from '../users/users.service';
 import { UserProfileService } from '../users/user-profile.service';
 import { PreferenceQueueService } from './preference-queue.service';
 import { UpdatePreferenceDto } from './dto/update-preference.dto';
+import { UpdateMatchCountryDto } from './dto/update-match-country.dto';
 import { normalizeInterestedIn } from '../common/utils/normalize.util';
 
 @Controller('api/profile')
@@ -61,6 +62,25 @@ export class ProfileController {
     const publicUser = await this.userProfileService.toPublicUser(currentUser);
     publicUser.interestedIn = interestedIn;
 
+    return { success: true, user: publicUser };
+  }
+
+  @Patch('match-country')
+  async updateMatchCountry(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: UpdateMatchCountryDto,
+  ) {
+    const raw = body.matchCountry;
+    const matchCountry =
+      raw === null || raw === undefined || String(raw).trim() === ''
+        ? null
+        : String(raw).trim().toUpperCase();
+
+    const updated = await this.usersService.updateMatchCountry(
+      user.userId,
+      matchCountry,
+    );
+    const publicUser = await this.userProfileService.toPublicUser(updated);
     return { success: true, user: publicUser };
   }
 }

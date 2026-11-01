@@ -27,7 +27,16 @@ type StartCallAck =
  *
  * Gender / interestedIn come from registration (stored user + JWT on socket).
  */
-export function useMatching(identity?: string) {
+type UseMatchingOptions = {
+  /** When true, start_call targets the paid creator in localStorage (creator room only). */
+  directCreatorCall?: boolean;
+};
+
+export function useMatching(
+  identity?: string,
+  options: UseMatchingOptions = {},
+) {
+  const directCreatorCall = Boolean(options.directCreatorCall);
   const [phase, setPhase] = useState<CallPhase>('idle');
   const [statusMessage, setStatusMessage] = useState('Ready to start a call.');
   const [match, setMatch] = useState<MatchedPayload | null>(null);
@@ -219,9 +228,11 @@ export function useMatching(identity?: string) {
       if (stored?.gender) payload.gender = stored.gender;
       if (stored?.interestedIn) payload.interestedIn = stored.interestedIn;
 
-      const targetCreatorUserId = getCreatorId();
-      if (targetCreatorUserId) {
-        payload.targetCreatorUserId = targetCreatorUserId;
+      if (directCreatorCall) {
+        const targetCreatorUserId = getCreatorId();
+        if (targetCreatorUserId) {
+          payload.targetCreatorUserId = targetCreatorUserId;
+        }
       }
 
       // Matched via socket event or ack — HTTP is only a backup for dropped events.
@@ -248,7 +259,7 @@ export function useMatching(identity?: string) {
     setStatusMessage('Connecting to server…');
     socket.connect();
     socket.once('connect', emitStart);
-  }, [applyMatched, applyWaiting, syncCallState]);
+  }, [applyMatched, applyWaiting, syncCallState, directCreatorCall]);
 
   const leaveCall = useCallback(() => {
     return new Promise<void>((resolve) => {

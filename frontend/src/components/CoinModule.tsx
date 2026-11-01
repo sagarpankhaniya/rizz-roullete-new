@@ -19,11 +19,13 @@ type CoinModuleProps = {
   partnerIdentity: string;
   /** Tips only work during an active call */
   tipsEnabled?: boolean;
+  onDrawerChange?: (open: boolean) => void;
 };
 
 export function CoinModule({
   partnerIdentity,
   tipsEnabled = true,
+  onDrawerChange,
 }: CoinModuleProps) {
   const [balance, setBalance] = useState(0);
   const [charging, setCharging] = useState(false);
@@ -138,6 +140,10 @@ export function CoinModule({
       setCharging(false);
     }
   }, [tipsEnabled]);
+
+  useEffect(() => {
+    onDrawerChange?.(showDrawer);
+  }, [showDrawer, onDrawerChange]);
 
   useEffect(() => {
     if (charging) {

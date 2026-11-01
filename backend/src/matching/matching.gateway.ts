@@ -22,6 +22,7 @@ import { PreferenceQueueService } from '../profile/preference-queue.service';
 import { GenderVerificationService } from '../gender-verification/gender-verification.service';
 import { AgeVerificationService } from '../age-verification/age-verification.service';
 import { CoinsService } from '../coins/coins.service';
+import { CreatorsService } from '../creators/creators.service';
 import { ChatArchiveService } from '../chat/chat-archive.service';
 import { TranslationService } from '../translation/translation.service';
 import {
@@ -81,6 +82,7 @@ export class MatchingGateway
     private readonly coinsService: CoinsService,
     private readonly chatArchive: ChatArchiveService,
     private readonly translation: TranslationService,
+    private readonly creatorsService: CreatorsService,
   ) {}
 
   afterInit(server: Server) {
@@ -250,10 +252,17 @@ export class MatchingGateway
       const userId =
         (client.data.user as SocketUser | undefined)?.userId || '';
 
-      const targetCreatorUserId =
+      let targetCreatorUserId =
         typeof body?.targetCreatorUserId === 'string'
           ? body.targetCreatorUserId.trim()
           : '';
+      if (targetCreatorUserId) {
+        const resolved =
+          await this.creatorsService.resolveCreatorUserId(targetCreatorUserId);
+        if (resolved) {
+          targetCreatorUserId = resolved;
+        }
+      }
 
       const result = await this.matchmaking.enqueueOrMatch({
         socketId: client.id,
@@ -263,6 +272,8 @@ export class MatchingGateway
         isVip,
         userId,
         targetCreatorUserId: targetCreatorUserId || undefined,
+        country: dbUser.country?.trim() || undefined,
+        matchCountry: dbUser.matchCountry?.trim() || undefined,
       });
 
       if (result.status === 'waiting') {

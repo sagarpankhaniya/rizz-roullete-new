@@ -19,6 +19,7 @@ import {
   ownBucket,
   usersAreCompatible,
 } from './compatibility.util';
+import { countriesCompatible } from './country.util';
 
 export interface ActiveCall {
   /** Unique id for this 1:1 pairing (reports, chat archival) */
@@ -51,6 +52,8 @@ export interface EnqueueInput {
   isVip?: boolean;
   userId?: string;
   targetCreatorUserId?: string;
+  country?: string;
+  matchCountry?: string;
 }
 
 /**
@@ -667,6 +670,8 @@ export class MatchmakingService {
       interestedIn,
       isVip = false,
       userId = '',
+      country = '',
+      matchCountry = '',
     } = input;
     const prefs: MatchPrefs = { gender, interestedIn };
     const bucket = ownBucket(prefs);
@@ -707,6 +712,8 @@ export class MatchmakingService {
       joinedAt,
       isVip: isVip ? '1' : '0',
       userId: userId || '',
+      country: country || '',
+      matchCountry: matchCountry || '',
     });
 
     const candidateBucketIds = candidateBuckets(prefs);
@@ -772,12 +779,42 @@ export class MatchmakingService {
         joinedAt: new Date(),
         isVip,
         userId: userId || undefined,
+        country: country || undefined,
+        matchCountry: matchCountry || undefined,
       });
       return this.buildWaitingResult(
         socketId,
         userId || undefined,
         'Waiting for a matching user…',
       );
+    }
+
+    const meCountry = { country, matchCountry };
+    if (
+      !countriesCompatible(
+        meCountry.matchCountry,
+        meCountry.country,
+        partnerMeta.matchCountry,
+        partnerMeta.country,
+      )
+    ) {
+      this.logger.log(
+        `Country filter mismatch (${identity} ↔ ${partnerMeta.identity}); re-queuing both`,
+      );
+      await this.requeueUser(partnerMeta);
+      await this.requeueUser({
+        socketId,
+        identity,
+        gender,
+        interestedIn,
+        bucket,
+        joinedAt: new Date(joinedAt),
+        isVip,
+        userId: userId || undefined,
+        country: country || undefined,
+        matchCountry: matchCountry || undefined,
+      });
+      return this.enqueueRandomMatch(input);
     }
 
     // Defense in depth — should already be guaranteed by Lua
@@ -800,6 +837,8 @@ export class MatchmakingService {
         joinedAt: new Date(joinedAt),
         isVip,
         userId: userId || undefined,
+        country: country || undefined,
+        matchCountry: matchCountry || undefined,
       });
       return this.buildWaitingResult(
         socketId,
@@ -825,6 +864,8 @@ export class MatchmakingService {
         interestedIn,
         isVip,
         userId,
+        country,
+        matchCountry,
       });
     }
 
@@ -838,6 +879,8 @@ export class MatchmakingService {
         joinedAt: new Date(joinedAt),
         isVip,
         userId: userId || undefined,
+        country: country || undefined,
+        matchCountry: matchCountry || undefined,
       });
       return { status: 'matched', matches };
     } catch (error) {
@@ -851,6 +894,8 @@ export class MatchmakingService {
         joinedAt: new Date(joinedAt),
         isVip,
         userId: userId || undefined,
+        country: country || undefined,
+        matchCountry: matchCountry || undefined,
       });
       this.logger.error(
         `Match failed; re-queued ${partnerMeta.identity} and ${identity}`,
@@ -894,6 +939,8 @@ export class MatchmakingService {
       isVip: data.isVip === '1' || data.isVip === 'true',
       userId: data.userId || undefined,
       targetCreatorUserId: data.targetCreatorUserId || undefined,
+      country: data.country || undefined,
+      matchCountry: data.matchCountry || undefined,
     };
   }
 
@@ -914,6 +961,8 @@ export class MatchmakingService {
       isVip: user.isVip ? '1' : '0',
       userId: user.userId || '',
       targetCreatorUserId: user.targetCreatorUserId || '',
+      country: user.country || '',
+      matchCountry: user.matchCountry || '',
     });
     await client.rpush(queueKey, user.socketId);
     await this.presence.setStatus(user.socketId, 'waiting');

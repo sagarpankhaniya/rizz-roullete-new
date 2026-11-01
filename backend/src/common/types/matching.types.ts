@@ -17,6 +17,10 @@ export interface WaitingUser {
   userId?: string;
   /** Fan targeting a specific creator room */
   targetCreatorUserId?: string;
+  /** User's registered country (for mutual country filter) */
+  country?: string;
+  /** Preferred partner country ISO code, if any */
+  matchCountry?: string;
 }
 
 export interface StartCallPayload {

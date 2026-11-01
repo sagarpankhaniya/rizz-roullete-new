@@ -9,6 +9,8 @@ export type StoredUser = {
   isSubscribed?: boolean;
   subscriptionPlan?: string | null;
   isVip?: boolean;
+  country?: string | null;
+  matchCountry?: string | null;
 };
 
 export function getStoredUser(): StoredUser | null {
@@ -41,6 +43,11 @@ export function setStoredUser(user: unknown) {
         : (prev?.subscriptionPlan ?? null),
     isVip:
       typeof u.isVip === 'boolean' ? u.isVip : (prev?.isVip ?? false),
+    country: u.country !== undefined ? u.country : (prev?.country ?? null),
+    matchCountry:
+      u.matchCountry !== undefined
+        ? u.matchCountry
+        : (prev?.matchCountry ?? null),
   };
   localStorage.setItem(USER_KEY, JSON.stringify(payload));
 }

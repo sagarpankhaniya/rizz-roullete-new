@@ -11,6 +11,7 @@ import { AgeVerificationModule } from '../age-verification/age-verification.modu
 import { CoinsModule } from '../coins/coins.module';
 import { ChatModule } from '../chat/chat.module';
 import { TranslationModule } from '../translation/translation.module';
+import { CreatorsModule } from '../creators/creators.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TranslationModule } from '../translation/translation.module';
     AuthModule,
     UsersModule,
     ProfileModule,
+    CreatorsModule,
     GenderVerificationModule,
     AgeVerificationModule,
     CoinsModule,

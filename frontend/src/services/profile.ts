@@ -93,6 +93,32 @@ export async function updateMatchPreference(
   return { ok: true, user: data.user };
 }
 
+export async function updateMatchCountry(
+  matchCountry: string | null,
+): Promise<
+  { ok: true; user: StoredUser } | { ok: false; error: string }
+> {
+  const res = await fetch(apiUrl('/api/profile/match-country'), {
+    method: 'PATCH',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ matchCountry }),
+  });
+  const data = (await res.json().catch(() => ({}))) as PreferenceUpdateResponse;
+
+  if (!res.ok || !data.user) {
+    return {
+      ok: false,
+      error:
+        (typeof data.error === 'string' ? data.error : null) ??
+        data.message ??
+        'Failed to update country filter',
+    };
+  }
+
+  setStoredUser(data.user);
+  return { ok: true, user: data.user };
+}
+
 export async function subscribeWithCard(input: {
   plan: string;
   nameOnCard: string;

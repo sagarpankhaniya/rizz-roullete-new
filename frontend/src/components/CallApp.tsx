@@ -33,7 +33,8 @@ import {
   isUserVip,
   setStoredUser,
 } from '../utils/user';
-import { updateMatchPreference } from '../services/profile';
+import { updateMatchCountry, updateMatchPreference } from '../services/profile';
+import { CoinModule } from './CoinModule';
 import {
   verifyVideoFrame,
   type GenderVerificationResponse,
@@ -62,6 +63,7 @@ import {
   SOCKET_EVENTS,
   type ChatMessagePayload,
   type CreatorFanWaitingPayload,
+  type TipReceivedPayload,
 } from '../types/events';
 
 function SearchingDots() {
@@ -83,6 +85,12 @@ const PREF_OPTIONS = [
 ] as const;
 
 type Country = (typeof COUNTRIES)[number];
+
+function countryFromStoredCode(code: string | null | undefined): Country | null {
+  if (!code?.trim()) return null;
+  const upper = code.trim().toUpperCase();
+  return COUNTRIES.find((c) => c.code === upper) ?? null;
+}
 
 interface CallAppProps {
   mode?: RoomMode;
@@ -129,7 +137,7 @@ export function CallApp({
     markInCall,
     markLiveKitError,
     syncCallState,
-  } = useMatching(username);
+  } = useMatching(username, { directCreatorCall: isCreatorRoom });
 
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
@@ -186,8 +194,12 @@ export function CallApp({
       ? stored
       : 'everyone';
   });
-  const [countryFilter, setCountryFilter] = useState<Country | null>(null);
+  const [countryFilter, setCountryFilter] = useState<Country | null>(() =>
+    countryFromStoredCode(getStoredUser()?.matchCountry),
+  );
   const [countrySearch, setCountrySearch] = useState('');
+  const [countryUpdating, setCountryUpdating] = useState(false);
+  const [showCoinsDrawer, setShowCoinsDrawer] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [genderCheck, setGenderCheck] = useState<{
@@ -726,6 +738,28 @@ export function CallApp({
   }, [genderCheck.status, isVip, phase, startCall]);
 
   useEffect(() => {
+    if (!isVip) return;
+    const socket = getSocket();
+    const onTipReceived = (payload: TipReceivedPayload) => {
+      const amount = payload?.amount?.trim();
+      if (!amount) return;
+      const from = payload.fromIdentity?.trim() || 'Fan';
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `tip-${payload.sentAt ?? Date.now()}`,
+          text: `💰 ${amount} coins from ${from}`,
+          from: 'partner',
+        },
+      ]);
+    };
+    socket.on(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
+    return () => {
+      socket.off(SOCKET_EVENTS.TIP_RECEIVED, onTipReceived);
+    };
+  }, [isVip]);
+
+  useEffect(() => {
     const msg = consumeCreatorFanWaitingMessage();
     if (msg) setFanWaitingMsg(msg);
   }, []);
@@ -790,6 +824,41 @@ export function CallApp({
       }
     },
     [genderPref, prefUpdating, restartSearchWithPref],
+  );
+
+  const applyCountryChange = useCallback(
+    async (next: Country | null) => {
+      if (countryUpdating) return;
+      const prevCode = countryFilter?.code ?? null;
+      const nextCode = next?.code ?? null;
+      if (prevCode === nextCode) {
+        setShowCountryPicker(false);
+        setCountrySearch('');
+        return;
+      }
+      setCountryUpdating(true);
+      try {
+        const result = await updateMatchCountry(nextCode);
+        if (!result.ok) return;
+        setCountryFilter(next);
+        setStoredUser(result.user);
+        setShowCountryPicker(false);
+        setShowSettings(false);
+        setCountrySearch('');
+        if (!isCreatorRoom && genderCheck.status === 'verified') {
+          await restartSearchWithPref();
+        }
+      } finally {
+        setCountryUpdating(false);
+      }
+    },
+    [
+      countryFilter?.code,
+      countryUpdating,
+      genderCheck.status,
+      isCreatorRoom,
+      restartSearchWithPref,
+    ],
   );
 
   const requestPreferenceChange = useCallback(
@@ -1385,7 +1454,7 @@ export function CallApp({
 
       <main className="video-stage">
         <section
-          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${isCreatorWaiting ? ' creator-waiting' : ''}${verifyFailed ? ' verify-failed' : ''}`}
+          className={`partner-video${videoReady ? ' video-ready' : ''}${isConnected ? ' is-connected' : ''}${showPartnerLoading ? ' is-loading' : ''}${isSearching ? ' is-searching' : ''}${isCreatorWaiting ? ' creator-waiting' : ''}${verifyFailed ? ' verify-failed' : ''}${showCoinsDrawer ? ' coins-open' : ''}`}
           aria-label="Partner video"
         >
           <div className="partner-photo" aria-hidden="true" />
@@ -1483,6 +1552,14 @@ export function CallApp({
             <span className="video-label vip-badge partner-vip-badge">VIP</span>
           )}
 
+          {(isCreatorRoom || Boolean(match?.partnerIsVip)) && (
+            <CoinModule
+              partnerIdentity={match?.partnerIdentity ?? creatorName}
+              tipsEnabled={isConnected && Boolean(match?.partnerUserId)}
+              onDrawerChange={setShowCoinsDrawer}
+            />
+          )}
+
           {!isCreatorRoom && (
           <div className="filter-pills desktop-filter-pills" ref={filterPillsRef}>
             <div className="filter-pill-wrap">
@@ -1514,7 +1591,7 @@ export function CallApp({
                       type="button"
                       className={!countryFilter ? 'sel' : ''}
                       onClick={() => {
-                        setCountryFilter(null);
+                        void applyCountryChange(null);
                         closeDesktopPickers();
                       }}
                     >
@@ -1526,7 +1603,7 @@ export function CallApp({
                         type="button"
                         className={countryFilter?.code === c.code ? 'sel' : ''}
                         onClick={() => {
-                          setCountryFilter(c);
+                          void applyCountryChange(c);
                           closeDesktopPickers();
                         }}
                       >
@@ -1863,10 +1940,7 @@ export function CallApp({
                 <button
                   type="button"
                   className={!countryFilter ? 'sel' : ''}
-                  onClick={() => {
-                    setCountryFilter(null);
-                    setCountrySearch('');
-                  }}
+                  onClick={() => void applyCountryChange(null)}
                 >
                   🌍 Any Country
                 </button>
@@ -1875,10 +1949,7 @@ export function CallApp({
                     key={c.code}
                     type="button"
                     className={countryFilter?.code === c.code ? 'sel' : ''}
-                    onClick={() => {
-                      setCountryFilter(c);
-                      setCountrySearch('');
-                    }}
+                    onClick={() => void applyCountryChange(c)}
                   >
                     {c.flag} {c.name}
                   </button>
